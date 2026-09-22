@@ -68,3 +68,10 @@ Report suspected vulnerabilities privately to the repository maintainer using an
 * [OWASP OAuth 2.0 guidance](https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html)
 * [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
 * [Starlette CORS and trusted-host middleware](https://www.starlette.io/middleware/)
+
+
+## API-token TLS certificate verification
+
+Under **Settings > API token**, **Verify TLS certificate (recommended)** is enabled by default. If a connection fails because of a certificate error, you can temporarily turn it off and save settings. The choice is remembered and applies to API-token Jira requests, including filters, field discovery, validation, and sync. OAuth always keeps certificate verification enabled.
+
+This skips certificate verification; it does not turn off HTTPS or fix expired tokens, permissions, or network failures. Disabling verification can expose your API token and Jira data to interception. For a lasting fix, ask IT for an approved CA certificate bundle, set `SSL_CERT_FILE` to its PEM file path in the backend environment, restart the backend, and keep verification enabled. See [HTTPX certificate configuration](https://www.python-httpx.org/advanced/ssl/).

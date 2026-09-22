@@ -70,6 +70,7 @@ export interface AppConfig {
   has_api_token: boolean;
   has_oauth_token: boolean;
   jira_api_token?: string;
+  jira_verify_tls?: boolean;
   jira_client_id?: string;
   jira_client_secret?: string;
   jira_cloud_id?: string;

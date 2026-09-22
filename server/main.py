@@ -23,6 +23,11 @@ try:
             conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN jira_field_key VARCHAR(128)")
             conn.commit()
 
+        config_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(saved_configs)")}
+        if config_cols and "jira_verify_tls" not in config_cols:
+            conn.exec_driver_sql("ALTER TABLE saved_configs ADD COLUMN jira_verify_tls BOOLEAN NOT NULL DEFAULT 1")
+            conn.commit()
+
         view_rows = conn.exec_driver_sql("PRAGMA table_info(saved_views)").fetchall()
         view_cols = [r[1] for r in view_rows]
         if "filter_rules" not in view_cols and len(view_cols) > 0:

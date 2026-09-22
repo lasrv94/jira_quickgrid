@@ -85,6 +85,7 @@ class SavedConfig(Base):
     jira_domain = Column(String(256), nullable=True)
     jira_email = Column(String(256), nullable=True)
     jira_api_token = Column(Text, nullable=True)
+    jira_verify_tls = Column(Boolean, nullable=False, default=True, server_default="1")
     jira_client_id = Column(String(256), nullable=True)
     jira_client_secret = Column(Text, nullable=True)
     jira_access_token = Column(Text, nullable=True)
@@ -186,6 +187,7 @@ class ConfigOut(BaseModel):
     jira_auth_type: str
     jira_domain: Optional[str] = None
     jira_email: Optional[str] = None
+    jira_verify_tls: bool = True
     has_api_token: bool = False
     has_oauth_token: bool = False
     jira_client_id: Optional[str] = None
@@ -200,6 +202,7 @@ class ConfigUpdateRequest(BaseModel):
     jira_domain: Optional[str] = None
     jira_email: Optional[str] = None
     jira_api_token: Optional[str] = None
+    jira_verify_tls: Optional[bool] = None
     jira_client_id: Optional[str] = None
     jira_client_secret: Optional[str] = None
     archivy_dir: Optional[str] = None

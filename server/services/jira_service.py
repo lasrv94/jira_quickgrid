@@ -191,7 +191,7 @@ class JiraService:
 
         results: List[Dict[str, Any]] = []
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, verify=JiraService._verify_tls(config)) as client:
             # 1. Fetch Projects from Jira instance
             try:
                 proj_res = await client.get(f"{base_url}/rest/api/3/project", auth=auth, headers=headers)
@@ -254,6 +254,11 @@ class JiraService:
         return results if results else MOCK_FILTERS
 
     @staticmethod
+    def _verify_tls(config: SavedConfig) -> bool:
+        # Only an explicit opt-out in API-token mode can disable verification.
+        return not (config.jira_auth_type == "pat" and config.jira_verify_tls is False)
+
+    @staticmethod
     def _get_connection_details(config: SavedConfig) -> Tuple[Optional[str], Optional[Tuple[str, str]], Dict[str, str]]:
         headers = {"Accept": "application/json"}
         if config.jira_auth_type == "pat":
@@ -293,7 +298,7 @@ class JiraService:
                 # Fetch directly from Jira filter API
                 base_url, auth, headers = JiraService._get_connection_details(config)
                 if base_url:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
+                    async with httpx.AsyncClient(timeout=10.0, verify=JiraService._verify_tls(config)) as client:
                         f_res = await client.get(f"{base_url}/rest/api/3/filter/{filter_id.strip()}", auth=auth, headers=headers)
                         if f_res.status_code == 200:
                             fdata = f_res.json()
@@ -303,7 +308,7 @@ class JiraService:
         elif config.selected_filter_id and config.selected_filter_id.strip().isdigit() and not config.filter_jql:
             base_url, auth, headers = JiraService._get_connection_details(config)
             if base_url:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, verify=JiraService._verify_tls(config)) as client:
                     f_res = await client.get(f"{base_url}/rest/api/3/filter/{config.selected_filter_id.strip()}", auth=auth, headers=headers)
                     if f_res.status_code == 200:
                         fdata = f_res.json()
@@ -323,7 +328,7 @@ class JiraService:
                 )
 
             jql = JiraService._make_bounded_jql(config.filter_jql)
-            raw_issues = await JiraService._fetch_jira_issues(base_url, auth, headers, jql)
+            raw_issues = await JiraService._fetch_jira_issues(base_url, auth, headers, jql, verify_tls=JiraService._verify_tls(config))
 
             # In real Jira mode, remove initial mock seed issues if any
             mock_keys = ["CORE-101", "CORE-102", "CORE-103", "CORE-104", "CORE-105", "CORE-106", "CORE-107", "CORE-108"]
@@ -405,7 +410,8 @@ class JiraService:
         base_url: str,
         auth: Optional[Tuple[str, str]],
         headers: Dict[str, str],
-        jql: str
+        jql: str,
+        *, verify_tls: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Fetches issues using Jira Cloud's /rest/api/3/search/jql (CHANGE-2046)
@@ -413,7 +419,7 @@ class JiraService:
         """
         issues: List[Dict[str, Any]] = []
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, verify=verify_tls) as client:
             # 1. Try modern /rest/api/3/search/jql API
             url_jql = f"{base_url}/rest/api/3/search/jql"
             params = {
@@ -531,7 +537,7 @@ class JiraService:
         if not base_url:
             return []
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, verify=JiraService._verify_tls(config)) as client:
             try:
                 res = await client.get(f"{base_url}/rest/api/3/field", auth=auth, headers=headers)
                 if res.status_code == 200:
@@ -560,7 +566,7 @@ class JiraService:
         if not base_url:
             raise HTTPException(status_code=400, detail="Faltan credenciales de Jira.")
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, verify=JiraService._verify_tls(config)) as client:
             target_jql = jql
             filter_name = "Consulta JQL personalizada"
 

@@ -31,6 +31,7 @@ def get_auth_status(db: Session = Depends(get_db)):
         jira_auth_type=config.jira_auth_type or "mock",
         jira_domain=config.jira_domain,
         jira_email=config.jira_email,
+        jira_verify_tls=config.jira_verify_tls,
         has_api_token=bool(config.jira_api_token),
         has_oauth_token=bool(config.jira_access_token),
         jira_client_id=config.jira_client_id,
@@ -45,6 +46,8 @@ def update_auth_config(data: ConfigUpdateRequest, db: Session = Depends(get_db))
         config.jira_auth_type = data.jira_auth_type
     if data.jira_domain is not None:
         config.jira_domain = normalize_jira_domain(data.jira_domain) if data.jira_domain else ""
+    if data.jira_verify_tls is not None:
+        config.jira_verify_tls = data.jira_verify_tls
     if data.jira_email is not None:
         config.jira_email = data.jira_email
     if data.jira_api_token is not None and data.jira_api_token.strip():

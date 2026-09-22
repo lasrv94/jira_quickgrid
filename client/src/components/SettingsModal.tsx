@@ -47,6 +47,7 @@ export const SettingsModal: React.FC<Props> = ({
   const [domain, setDomain] = useState(config?.jira_domain || '');
   const [email, setEmail] = useState(config?.jira_email || '');
   const [apiToken, setApiToken] = useState('');
+  const [verifyTls, setVerifyTls] = useState(config?.jira_verify_tls ?? true);
   const [clientId, setClientId] = useState(config?.jira_client_id || '');
   const [clientSecret, setClientSecret] = useState('');
   const [archivyDir, setArchivyDir] = useState(config?.archivy_dir || '');
@@ -79,6 +80,7 @@ export const SettingsModal: React.FC<Props> = ({
       setAuthType(config.jira_auth_type || 'mock');
       setDomain(config.jira_domain || '');
       setEmail(config.jira_email || '');
+      setVerifyTls(config.jira_verify_tls ?? true);
       setClientId(config.jira_client_id || '');
       setArchivyDir(config.archivy_dir || '');
       setFilterId(config.selected_filter_id || '');
@@ -206,6 +208,7 @@ export const SettingsModal: React.FC<Props> = ({
         jira_domain: domain,
         jira_email: email,
         jira_api_token: apiToken || undefined,
+        jira_verify_tls: verifyTls,
         jira_client_id: clientId,
         jira_client_secret: clientSecret || undefined,
         archivy_dir: archivyDir || undefined,
@@ -480,6 +483,29 @@ export const SettingsModal: React.FC<Props> = ({
                     >
                       {t.token_link} <ExternalLink className="w-2.5 h-2.5" />
                     </a>
+                  </div>
+                  <div className="border-t border-gray-200 pt-3">
+                    <label className="flex items-center justify-between gap-3 text-xs font-medium text-gray-700">
+                      {t.tls_verify_label}
+                      <span className="relative inline-flex shrink-0">
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          checked={verifyTls}
+                          onChange={(e) => setVerifyTls(e.target.checked)}
+                          aria-describedby="tls-verification-help"
+                          className="peer sr-only"
+                        />
+                        <span aria-hidden="true" className="h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-blue-600 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600" />
+                        <span aria-hidden="true" className="pointer-events-none absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+                      </span>
+                    </label>
+                    <p id="tls-verification-help" className="mt-1 text-[11px] text-gray-500">{t.tls_verify_help}</p>
+                    {!verifyTls && (
+                      <p role="alert" className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                        {t.tls_verify_warning}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
