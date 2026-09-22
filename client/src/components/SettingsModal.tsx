@@ -1,3 +1,4 @@
+import { apiFetch } from '../services/api';
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   AlertCircle,
@@ -234,7 +235,7 @@ export const SettingsModal: React.FC<Props> = ({
       if (clientId) {
         await updateConfig({ jira_client_id: clientId, jira_client_secret: clientSecret || undefined });
       }
-      const res = await fetch('/api/auth/jira/login');
+      const res = await apiFetch('/api/auth/jira/login?' + new URLSearchParams({ redirect_uri: window.location.origin + '/auth/callback' }));
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;

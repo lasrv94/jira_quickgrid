@@ -1,5 +1,5 @@
 # Jira QuickGrid 🚀
-### Visual, Modern & Safe Jira Issue Management with Smart Interactive Grid
+### Visual, Local Jira Issue Management with Smart Interactive Grid
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
@@ -9,32 +9,23 @@
 
 A modern, fast, local-first web application that turns your Atlassian Jira workspace into an interactive, spreadsheet-like **QuickGrid**. It gives engineering, QA, and product teams the freedom to organize, filter, and augment Jira issues with **persistent local custom fields** that Jira doesn't have—**without altering your company's Jira schema or risking data overwrites.**
 
+## Security and supported use
+
+Jira QuickGrid is a **single-user desktop application**. Keep both servers on loopback; do not expose them to a LAN, public reverse proxy, tunnel, or shared host. There is no application user login or per-user authorization. Jira OAuth authenticates the Jira connection only.
+
+Browser access is restricted to `http://localhost:5173` and `http://127.0.0.1:5173`. API calls require `X-QuickGrid-Client: 1` (except health checks and preflight). The frontend supplies it automatically; it is a browser CSRF control, not a password. Direct Swagger requests need that header through an API client.
+
+Credentials are stored **unencrypted** in `server/jira_app.db`. Protect that file, its WAL files, notes, and backups with OS permissions and disk encryption. Never commit credentials, private notes, databases, or exported company data. Review [SECURITY.md](SECURITY.md) for findings, controls, limitations, and reporting guidance.
+
 ---
 
-## 🔒 Enterprise Safety & Corporate Security
+## Jira access and data persistence
 
-> **Can any team member or employee safely use Jira QuickGrid in their company?**  
-> **Yes, 100% safely.** Jira QuickGrid was designed from day one with enterprise security, data privacy, and non-destructive operations as primary architectural pillars.
+The application reads Jira Cloud data and stores custom fields locally. OAuth requests read scopes and offline access; API tokens may have broader permissions than the app uses. Follow your organization's credential policy.
 
-### Why It Is 100% Safe For Enterprise Use:
+Jira fields are read-only in the grid and mapped-field value writes are rejected by the API. Sync updates Jira issue records without overwriting local custom values. Explicitly deleting a local column deletes its associated values; keep protected backups.
 
-1. **Strictly Non-Destructive (Read-Only to Jira Cloud):**
-   * The application interacts with Jira exclusively through official Atlassian REST APIs using read-only scopes (`read:jira-work`, `read:jira-user`).
-   * It **never** mutates, modifies, or deletes your organization's Jira tickets, workflows, custom fields, or sprint settings.
-   * Jira field columns are strictly locked and visually badged with a lock icon in the UI.
-
-2. **Zero Cloud Leakage (100% Local-First Storage):**
-   * **No intermediate servers:** Your data moves directly between your browser, your local machine, and your company's Jira instance (`https://your-domain.atlassian.net`).
-   * All Atlassian API tokens, OAuth credentials, synced issues, and custom fields are stored locally in an embedded SQLite database (`server/jira_app.db`) on your machine.
-   * **Zero telemetry, zero tracking, zero third-party analytics.** Nothing leaves your computer.
-
-3. **No Jira Administrator Rights Required:**
-   * In enterprise environments, creating a custom field in Jira often takes weeks of administrative approvals.
-   * With Jira QuickGrid, individual contributors, QA engineers, and project leads can create **unlimited local fields** (e.g., *QA Status*, *Internal Priority*, *Target Sprint*, *Blocker Notes*) that exist solely in your local view without bothering Jira administrators or cluttering the global enterprise schema.
-
-4. **Guaranteed No-Overwrite Persistence:**
-   * Synced Jira fields and local custom data are stored in completely isolated relational tables.
-   * When you click **Update Data (Sync)**, Jira fields are refreshed, but your local notes, custom single-selects, and ratings are **never overwritten or lost**.
+Network traffic includes Atlassian API/OAuth calls and browser requests for remote avatars. Local storage is not encrypted by the application. Review the security limits above before connecting company data.
 
 ---
 
@@ -64,7 +55,7 @@ A modern, fast, local-first web application that turns your Atlassian Jira works
 
 ### 4. Archivy Knowledge Base Integration
 * **Side-Drawer Wiki:** Click **"Wiki Doc"** on any row to open a full Markdown editor and live preview panel for that specific ticket.
-* **Local Markdown Files:** Notes are saved as portable Markdown files in `server/data/archivy_notes/[KEY].md`, making them fully versionable in Git.
+* **Local Markdown Files:** Notes are saved as portable Markdown files in `server/data/archivy_notes/[KEY].md`, with private notes ignored by Git by default (only the sample note is tracked).
 
 ### 5. One-Click PDF Export
 * Export the currently filtered, grouped, and sorted grid directly to a clean, professional PDF document ready for sprint reviews and stakeholder meetings.
@@ -114,7 +105,7 @@ flowchart TD
 
 ### Prerequisites
 * **Python 3.10+** ([Download Python](https://www.python.org/downloads/)) — Ensure "Add Python to PATH" is checked on Windows.
-* **Node.js 18+** ([Download Node.js LTS](https://nodejs.org/))
+* **Node.js 22.12+** ([Download Node.js LTS](https://nodejs.org/))
 * **Git** ([Download Git](https://git-scm.com/))
 
 ---
@@ -161,7 +152,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 #### 2. Setup Frontend
 ```bash
 cd client
-npm install
+npm ci
 npm run dev
 ```
 * Application URL: `http://localhost:5173`
@@ -176,7 +167,7 @@ Click the **⚙️ Settings** icon in the top toolbar to configure your connecti
 * No credentials required.
 * Instantly loads a realistic sprint dataset for testing and demonstration.
 
-### 2. Jira Cloud API Token (Recommended for Enterprise Users)
+### 2. Jira Cloud API Token (API Token)
 Fastest way to connect to your company's Jira Cloud without admin privileges:
 1. **Domain:** Enter your Jira domain (e.g., `company.atlassian.net`).
 2. **Email:** Your corporate Atlassian email address.
@@ -202,7 +193,7 @@ Verify the persistence rules and API integrity:
 .\server\.venv\Scripts\pytest.exe server/tests/ -v
 ```
 
-Expected output:
+The suite includes nine original tests and 32 security regression cases. Tests use a temporary database and notes directory, never your application data. Representative output:
 ```text
 server/tests/test_api_endpoints.py::test_health_check PASSED
 server/tests/test_api_endpoints.py::test_auth_status PASSED
@@ -213,7 +204,7 @@ server/tests/test_api_endpoints.py::test_archivy_notes PASSED
 server/tests/test_persistence.py::test_custom_values_never_overwritten_by_jira_sync PASSED
 server/tests/test_persistence.py::test_archived_issue_retains_custom_values PASSED
 
-======================== 9 passed in 2.85s ========================
+======================== 41 passed ========================
 ```
 
 ---
@@ -258,7 +249,7 @@ JIRA_WEB/
 │   │   └── jira_service.py              # Jira Cloud client, JQL runner & mock provider
 │   ├── tests/
 │   │   ├── test_api_endpoints.py        # Complete API integration test suite
-│   │   └── test_persistence.py          # Mathematical proof of no-overwrite guarantee
+│   │   └── test_persistence.py          # Regression tests for no-overwrite behavior
 │   ├── database.py                      # SQLite WAL configuration & session provider
 │   ├── models.py                        # SQLAlchemy ORM & Pydantic models
 │   └── main.py                          # FastAPI entrypoint & auto-migration engine

@@ -10,6 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { Toolbar } from './components/Toolbar';
 import { ViewTabs } from './components/ViewTabs';
 import {
+  apiFetch,
   createColumn,
   createView,
   deleteColumn,
@@ -77,12 +78,15 @@ export function App() {
     const oauthCode = urlParams.get('code');
     if (oauthCode) {
       window.history.replaceState({}, document.title, window.location.pathname);
-      fetch('/api/auth/jira/callback', {
+      apiFetch('/api/auth/jira/callback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: oauthCode, redirect_uri: window.location.origin + '/auth/callback' }),
+        body: JSON.stringify({ code: oauthCode, state: urlParams.get('state') || '', redirect_uri: window.location.origin + '/auth/callback' }),
       })
-        .then((res) => res.json())
+        .then(async (res) => {
+          if (!res.ok) throw new Error(lang === 'es' ? 'No se pudo conectar con Atlassian.' : 'Could not connect to Atlassian.');
+          return res.json();
+        })
         .then(() => {
           setBannerMessage(lang === 'es' ? 'Conexión Atlassian OAuth establecida.' : 'Atlassian OAuth connected.');
           setTimeout(() => setBannerMessage(null), 4000);

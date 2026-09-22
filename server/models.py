@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from sqlalchemy import (
     Boolean,
     Column,
@@ -196,7 +196,7 @@ class ConfigUpdateRequest(BaseModel):
     selected_filter_id: Optional[str] = None
     selected_filter_name: Optional[str] = None
     filter_jql: Optional[str] = None
-    jira_auth_type: Optional[str] = None
+    jira_auth_type: Optional[Literal["mock", "pat", "oauth"]] = None
     jira_domain: Optional[str] = None
     jira_email: Optional[str] = None
     jira_api_token: Optional[str] = None

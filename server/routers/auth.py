@@ -1,13 +1,16 @@
 import os
+import secrets
+import time
+from threading import Lock
+from pydantic import BaseModel, Field
+from security import TRUSTED_ORIGINS, normalize_jira_domain
 import urllib.parse
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 import httpx
 from sqlalchemy.orm import Session
 from database import get_db
-from models import ConfigOut, ConfigUpdateRequest, SavedConfig
+from models import ConfigOut, ConfigUpdateRequest
 from services.jira_service import JiraService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -41,7 +44,7 @@ def update_auth_config(data: ConfigUpdateRequest, db: Session = Depends(get_db))
     if data.jira_auth_type is not None:
         config.jira_auth_type = data.jira_auth_type
     if data.jira_domain is not None:
-        config.jira_domain = data.jira_domain.replace("https://", "").replace("http://", "").rstrip("/")
+        config.jira_domain = normalize_jira_domain(data.jira_domain) if data.jira_domain else ""
     if data.jira_email is not None:
         config.jira_email = data.jira_email
     if data.jira_api_token is not None and data.jira_api_token.strip():
@@ -63,8 +66,21 @@ def update_auth_config(data: ConfigUpdateRequest, db: Session = Depends(get_db))
     db.refresh(config)
     return get_auth_status(db)
 
+OAUTH_STATES = {}
+OAUTH_LOCK = Lock()
+OAUTH_COOKIE = "quickgrid_oauth_state"
+
+class OAuthCallback(BaseModel):
+    code: str = Field(min_length=1, max_length=8192)
+    state: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    redirect_uri: str
+
+def validate_redirect_uri(uri):
+    if uri not in {origin + "/auth/callback" for origin in TRUSTED_ORIGINS}:
+        raise HTTPException(400, "Invalid callback URL / URL de retorno no permitida")
+
 @router.get("/jira/login")
-def jira_oauth_login(redirect_uri: str = "http://localhost:5173/auth/callback", db: Session = Depends(get_db)):
+def jira_oauth_login(response: Response, redirect_uri: str = "http://localhost:5173/auth/callback", db: Session = Depends(get_db)):
     config = JiraService.get_or_create_config(db)
     client_id = config.jira_client_id or os.environ.get("JIRA_CLIENT_ID")
     if not client_id:
@@ -73,12 +89,24 @@ def jira_oauth_login(redirect_uri: str = "http://localhost:5173/auth/callback", 
             detail="Falta configurar el Atlassian Client ID en la pestaña de Configuración."
         )
 
+    validate_redirect_uri(redirect_uri)
+    state = secrets.token_urlsafe(32)
+    with OAUTH_LOCK:
+        now = time.monotonic()
+        for old in list(OAUTH_STATES):
+            if OAUTH_STATES[old][0] <= now:
+                del OAUTH_STATES[old]
+        if len(OAUTH_STATES) >= 100:
+            raise HTTPException(429, "Too many login attempts / Demasiados intentos")
+        OAUTH_STATES[state] = (now + 600, redirect_uri)
+    response.set_cookie(OAUTH_COOKIE, state, max_age=600, httponly=True,
+                        samesite="lax", path="/api/auth/jira")
     params = {
         "audience": "api.atlassian.com",
         "client_id": client_id,
         "scope": "read:jira-work read:jira-user offline_access",
         "redirect_uri": redirect_uri,
-        "state": "jira_quickgrid_session",
+        "state": state,
         "response_type": "code",
         "prompt": "consent",
     }
@@ -86,7 +114,17 @@ def jira_oauth_login(redirect_uri: str = "http://localhost:5173/auth/callback", 
     return {"url": url}
 
 @router.post("/jira/callback")
-async def jira_oauth_callback(code: str, redirect_uri: str = "http://localhost:5173/auth/callback", db: Session = Depends(get_db)):
+async def jira_oauth_callback(data: OAuthCallback, request: Request, response: Response, db: Session = Depends(get_db)):
+    validate_redirect_uri(data.redirect_uri)
+    cookie = request.cookies.get(OAUTH_COOKIE, "")
+    if not secrets.compare_digest(cookie.encode("utf-8"), data.state.encode("ascii")):
+        raise HTTPException(400, "Invalid OAuth state / Estado OAuth no valido")
+    with OAUTH_LOCK:
+        pending = OAUTH_STATES.pop(data.state, None)
+    if not pending or pending[0] <= time.monotonic() or pending[1] != data.redirect_uri:
+        raise HTTPException(400, "Expired or invalid OAuth state / Estado OAuth vencido o no valido")
+    response.delete_cookie(OAUTH_COOKIE, path="/api/auth/jira")
+    code, redirect_uri = data.code, data.redirect_uri
     config = JiraService.get_or_create_config(db)
     client_id = config.jira_client_id or os.environ.get("JIRA_CLIENT_ID")
     client_secret = config.jira_client_secret or os.environ.get("JIRA_CLIENT_SECRET")
@@ -106,7 +144,7 @@ async def jira_oauth_callback(code: str, redirect_uri: str = "http://localhost:5
     async with httpx.AsyncClient() as client:
         token_res = await client.post(ATLASSIAN_TOKEN_URL, json=payload)
         if token_res.status_code != 200:
-            raise HTTPException(status_code=400, detail=f"Error obteniendo token de Atlassian: {token_res.text}")
+            raise HTTPException(status_code=400, detail="Atlassian token exchange failed / Fallo al obtener token de Atlassian")
         token_data = token_res.json()
         access_token = token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")

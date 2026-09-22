@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+from fastapi import HTTPException
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -21,13 +23,22 @@ class ArchivyService:
 
     @staticmethod
     def get_note_filename(issue_key: str) -> str:
-        sanitized = re.sub(r'[^a-zA-Z0-9_\-]', '_', issue_key)
-        return f"{sanitized}.md"
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", issue_key) or issue_key.upper().split("-")[0] in {"CON", "PRN", "AUX", "NUL", *{f"COM{i}" for i in range(1, 10)}, *{f"LPT{i}" for i in range(1, 10)}}:
+            raise HTTPException(400, "Invalid note key / Clave de nota no valida")
+        return f"{issue_key}.md"
+
+    @staticmethod
+    def note_path(notes_dir: str, issue_key: str) -> str:
+        root = Path(notes_dir).resolve()
+        path = root / ArchivyService.get_note_filename(issue_key)
+        if path.is_symlink() or path.resolve().parent != root:
+            raise HTTPException(400, "Invalid note path / Ruta de nota no valida")
+        return str(path)
 
     @staticmethod
     def get_note(issue_key: str, issue_summary: str = "", db: Optional[Session] = None) -> Dict[str, Any]:
         notes_dir = ArchivyService.get_notes_dir(db)
-        filepath = os.path.join(notes_dir, ArchivyService.get_note_filename(issue_key))
+        filepath = ArchivyService.note_path(notes_dir, issue_key)
 
         if not os.path.exists(filepath):
             # Create default boilerplate markdown note
@@ -71,7 +82,7 @@ class ArchivyService:
     @staticmethod
     def save_note(issue_key: str, content: str, db: Optional[Session] = None) -> Dict[str, Any]:
         notes_dir = ArchivyService.get_notes_dir(db)
-        filepath = os.path.join(notes_dir, ArchivyService.get_note_filename(issue_key))
+        filepath = ArchivyService.note_path(notes_dir, issue_key)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
         mod_time = datetime.fromtimestamp(os.path.getmtime(filepath), tz=timezone.utc).isoformat()
@@ -92,7 +103,12 @@ class ArchivyService:
         for filename in os.listdir(notes_dir):
             if filename.endswith(".md"):
                 key = filename[:-3]
-                path = os.path.join(notes_dir, filename)
+                try:
+                    path = ArchivyService.note_path(notes_dir, key)
+                except HTTPException:
+                    continue
+                if not os.path.isfile(path):
+                    continue
                 mod_time = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc).isoformat()
                 with open(path, "r", encoding="utf-8") as f:
                     lines = f.readlines()

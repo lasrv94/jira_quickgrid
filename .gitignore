@@ -23,6 +23,8 @@ server/*/__pycache__/
 *.db-wal
 *.db-shm
 server/*.db*
+server/data/archivy_notes/*.md
+!server/data/archivy_notes/SAMPLE-CORE-101.md
 
 # Environment & Secrets
 .env

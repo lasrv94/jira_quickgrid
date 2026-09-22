@@ -36,7 +36,7 @@ deactivate
 echo ""
 echo "[2/2] Configurando Frontend (React + Vite)..."
 cd "$DIR/client"
-npm install
+npm ci
 
 echo ""
 echo "========================================================"

@@ -18,14 +18,14 @@ REM 2. Verificar Node.js
 node --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Node.js no esta instalado o no se encuentra en el PATH.
-    echo Por favor instala Node.js 18 o superior desde https://nodejs.org/
+    echo Por favor instala Node.js 22.12 o superior desde https://nodejs.org/
     pause
     exit /b 1
 )
 
 REM 3. Configurar Backend Python
 echo [1/2] Configurando Backend (Python)...
-cd /d %~dp0server
+cd /d "%~dp0server"
 if not exist ".venv" (
     echo Creando entorno virtual .venv...
     python -m venv .venv
@@ -38,8 +38,8 @@ echo Instalando dependencias del Backend...
 REM 4. Configurar Frontend Node.js
 echo.
 echo [2/2] Configurando Frontend (React + Vite)...
-cd /d %~dp0client
-call npm install
+cd /d "%~dp0client"
+call npm ci
 
 echo.
 echo ========================================================

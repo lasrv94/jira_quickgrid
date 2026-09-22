@@ -2,6 +2,14 @@ import type { AppConfig, ArchivyNote, CustomColumn, JiraFilter, JiraIssue } from
 
 const API_BASE = '/api';
 
+export function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set('X-QuickGrid-Client', '1');
+  return window.fetch(input, { ...init, headers });
+}
+
+const fetch = apiFetch;
+
 export async function fetchIssues(): Promise<JiraIssue[]> {
   const res = await fetch(`${API_BASE}/issues`);
   if (!res.ok) throw new Error('Error al obtener tickets');

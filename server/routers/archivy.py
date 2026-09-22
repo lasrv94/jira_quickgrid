@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from database import get_db
 from models import JiraIssue
@@ -9,7 +9,7 @@ from services.archivy_service import ArchivyService
 router = APIRouter(prefix="/api/archivy", tags=["archivy"])
 
 class NoteSaveRequest(BaseModel):
-    content: str
+    content: str = Field(max_length=1_000_000)
 
 @router.get("/notes/{issue_key}")
 def get_issue_note(issue_key: str, db: Session = Depends(get_db)):

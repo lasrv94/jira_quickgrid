@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
-from models import IssueCustomValue, IssueOut, JiraFilterOut, JiraIssue, SetCustomValueRequest
+from models import CustomColumn, IssueCustomValue, IssueOut, JiraFilterOut, JiraIssue, SetCustomValueRequest
 from services.jira_service import JiraService
 
 router = APIRouter(prefix="/api", tags=["issues"])
@@ -72,6 +72,11 @@ async def validate_filter(filter_id: Optional[str] = None, jql: Optional[str] = 
 
 @router.post("/issues/{key}/custom-values")
 def update_issue_custom_value(key: str, data: SetCustomValueRequest, db: Session = Depends(get_db)):
+    column = db.get(CustomColumn, data.column_id)
+    if column is None:
+        raise HTTPException(404, "Column not found / Columna no encontrada")
+    if column.type == "jira_field" or column.jira_field_key:
+        raise HTTPException(403, "Jira fields are read-only / Campos Jira de solo lectura")
     issue = db.query(JiraIssue).filter(JiraIssue.key == key).first()
     if not issue:
         raise HTTPException(status_code=404, detail=f"Ticket {key} no encontrado")

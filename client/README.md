@@ -1,32 +1,19 @@
-# React + TypeScript + Vite
+# Jira QuickGrid frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React, TypeScript, Tailwind CSS and Vite. See the [project README](../README.md), [user tutorial](../TUTORIAL.md), and [security policy](../SECURITY.md).
 
-Currently, two official plugins are available:
+Use Node.js 22.12 or newer.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm ci
+npm run dev
+npm run build
+npm run lint
+npm audit
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The development server binds to 127.0.0.1:5173 and proxies /api to 127.0.0.1:8000. Keep both servers local. Port 5173 is fixed because API origins and OAuth callbacks are restricted to that port.
+
+All API requests must go through `apiFetch` in `src/services/api.ts`, which adds the required browser CSRF header. It is not a login credential. OAuth sends code, state and redirect_uri as a JSON body, checks HTTP failure, and removes callback parameters from browser history.
+
+Jira fields are read-only; only local custom values are editable. User-facing changes must support English and Spanish.

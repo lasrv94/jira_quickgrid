@@ -1,4 +1,5 @@
 import json
+from security import normalize_jira_domain
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -258,7 +259,7 @@ class JiraService:
         if config.jira_auth_type == "pat":
             if not config.jira_domain or not config.jira_email or not config.jira_api_token:
                 return None, None, {}
-            domain = config.jira_domain.replace("https://", "").replace("http://", "").rstrip("/")
+            domain = normalize_jira_domain(config.jira_domain)
             base_url = f"https://{domain}"
             auth = (config.jira_email, config.jira_api_token)
             return base_url, auth, headers
@@ -460,11 +461,10 @@ class JiraService:
                 return issues
 
             # If all failed, log and raise error
-            err_text = res.text or res_v3.text or res_v2.text
-            logger.error(f"Jira API search failed: status {res.status_code}, response: {err_text}")
+            logger.error("Jira API search failed: status %s", res.status_code)
             raise HTTPException(
                 status_code=400,
-                detail=f"Jira API error ({res.status_code}): {err_text[:200]}"
+                detail=f"Jira API error ({res.status_code})"
             )
 
     @staticmethod
@@ -601,4 +601,4 @@ class JiraService:
                     "message": f"Filtro válido. Coincide con tickets en Jira."
                 }
             else:
-                raise HTTPException(status_code=400, detail=f"Error validando consulta JQL en Jira: {res.text[:200]}")
+                raise HTTPException(status_code=400, detail=f"Jira query validation failed / Consulta Jira no valida ({res.status_code})")

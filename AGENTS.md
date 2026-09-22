@@ -31,7 +31,7 @@ This document provides system context, architectural invariants, code convention
 
 ### 2. Local Custom Fields Never Overwrite Jira & Are Never Overwritten
 * Only locally created columns (e.g. `single_select`, `text`, `long_text`, `number`, `date`, `archivy_link`) can be edited.
-* Edits to local fields are saved to `issue_custom_values` via `POST /api/issues/{key}/custom-values/{column_id}`.
+* Edits to local fields are saved to `issue_custom_values` via `POST /api/issues/{key}/custom-values`.
 * When the user triggers **Sync Issues**, the backend executes an **UPSERT** on `jira_issues`. It **never** touches, modifies, or truncates `issue_custom_values`.
 * Local fields must retain their values even if a ticket is archived or changed in Jira.
 
@@ -94,4 +94,15 @@ Before committing or pushing any changes, execute and verify:
    # From project root
    .\server\.venv\Scripts\pytest.exe server/tests/ -v
    ```
-   All 9 persistence and API integration tests must pass.
+   All persistence, API integration, and security tests must pass (41 cases after the security review). Tests must use temporary storage, never the user's application database or notes.
+
+
+## 6. Security invariants
+
+* Preserve the loopback-only, single-user boundary. Do not widen host/origin allowlists or expose ports without designing real authentication and authorization.
+* Use `apiFetch` for frontend API requests; it adds `X-QuickGrid-Client: 1`. This header is a CSRF control, not authentication.
+* OAuth state must be random, expire, be browser-bound, and be consumed once. Callback URLs must exactly match the allowlist.
+* Validate Jira Cloud domains before sending credentials, including values already saved in the database.
+* Reject writes to Jira-mapped values on the backend as well as in the UI.
+* Do not print upstream response bodies or secrets in errors. Do not track private notes, databases, or credentials.
+* Keep [SECURITY.md](SECURITY.md) accurate; never claim encrypted storage or enterprise multi-user safety without implementing and verifying those controls.

@@ -9,7 +9,7 @@ Welcome to **Jira QuickGrid**. This guide explains step-by-step how to install, 
 Before getting started, make sure you have installed on your computer:
 
 * **Python:** Version 3.10 or higher ([Download Python](https://www.python.org/downloads/)). *(On Windows, make sure to check "Add Python to PATH")*.
-* **Node.js:** Version 18 or higher ([Download Node.js LTS](https://nodejs.org/)).
+* **Node.js:** Version 22.12 or higher ([Download Node.js LTS](https://nodejs.org/)).
 * **Git:** For cloning and version controlling the codebase ([Download Git](https://git-scm.com/)).
 
 ---
@@ -45,7 +45,7 @@ cd ..
 
 # 2. Setup Frontend
 cd client
-npm install
+npm ci
 cd ..
 ```
 
@@ -126,8 +126,8 @@ Click the gear icon **`⚙️`** in the top right to configure your connection:
 * Requires no credentials or Jira account.
 * Loads a full active sprint dataset with diverse statuses and priorities for immediate testing.
 
-### Mode 2: Jira Cloud API Token (Recommended for Enterprise Users)
-Fastest and safest way to connect to your corporate Jira instance without administrative assistance:
+### Mode 2: Jira Cloud API Token (API Token)
+A direct way to connect to your corporate Jira instance without administrative assistance:
 1. **Domain:** Your Jira Cloud subdomain (e.g. `your-company.atlassian.net`).
 2. **Email:** Your Atlassian user email.
 3. **API Token:** Generate a personal token at [Atlassian Account Security](https://id.atlassian.com/manage-profile/security/api-tokens).
@@ -143,10 +143,21 @@ For standard corporate OAuth flows:
 
 ---
 
-## 🔒 6. Enterprise Safety FAQ
+## 🔒 6. Security FAQ
 
 ### "Is it safe to connect to our corporate Jira?"
-**Yes, completely.**
-* **Read-Only Permissions:** The app uses read-only Atlassian scopes. It does not possess permissions to edit, delete, or reassign tickets on Jira Cloud.
-* **Local Storage Only:** All API tokens and ticket data remain on your local computer in SQLite (`jira_app.db`). No company data is sent to external cloud servers.
-* **No Jira Admin Needed:** Create your own custom tags and ratings locally without bothering Jira admins or polluting company-wide workflows.
+Use it only on a trusted, single-user workstation and follow your organization's approval and data-handling rules. See [SECURITY.md](SECURITY.md).
+
+* Keep backend and frontend on loopback. Do not publish port 8000 or 5173 or put the app behind a network proxy.
+* The app sends read requests to Jira; an API token may still have broader permissions. OAuth requests read scopes plus offline access. Prefer the minimum privileges your workflow needs.
+* Jira tokens, OAuth secrets, and downloaded tickets are stored unencrypted in SQLite. Protect the database, notes, and backups using OS permissions and disk encryption.
+* The browser can load remote avatar images; mock mode includes external image URLs. Jira/OAuth traffic goes to Atlassian. Do not assume the application is fully offline.
+* Private Markdown notes are ignored by Git. Sharing code does not require sharing your database, notes, credentials, or PDF exports.
+
+### Troubleshooting security checks
+* Use exactly `http://localhost:5173` or `http://127.0.0.1:5173`. Vite fails if port 5173 is occupied instead of silently switching ports.
+* For scripts, send `X-QuickGrid-Client: 1` to API endpoints. This is not authentication; all local processes remain trusted.
+* OAuth callbacks must match the origin used to open the app and the callback registered in Atlassian. Login attempts expire after ten minutes and cannot be replayed. A backend restart invalidates pending attempts; start login again.
+* Only `company.atlassian.net` domains (or the equivalent HTTPS base URL) are accepted. Jira Server/Data Center and arbitrary custom hosts are unsupported.
+* Notes use letters, digits, underscores and hyphens in filenames; paths, Windows device names, and symlink note files are rejected.
+* Environment variables must be set in the process that launches the backend. The app does not automatically load `.env` files.
