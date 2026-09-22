@@ -1,6 +1,6 @@
 import type { CustomColumn, FilterCondition, FilterConjunction, FilterOperator, JiraIssue } from '../types';
 
-export type FieldCategory = 'text' | 'select' | 'number' | 'date';
+export type FieldCategory = 'text' | 'select' | 'multiselect' | 'number' | 'date';
 
 export interface FieldDefinition {
   id: string;
@@ -21,12 +21,105 @@ export const BUILTIN_FIELDS: FieldDefinition[] = [
   { id: 'jira_updated_at', name: 'Fecha de Actualización', type: 'date' },
 ];
 
-export function getAllFilterableFields(columns: CustomColumn[]): FieldDefinition[] {
+export function getFieldValue(issue: JiraIssue, fieldId: string, columns?: CustomColumn[]): any {
+  // Check if fieldId maps to a custom column with jira_field_key
+  const col = columns?.find((c) => c.id === fieldId);
+  const jiraKey = col?.jira_field_key;
+  if (jiraKey && issue.raw_jira_fields && jiraKey in issue.raw_jira_fields) {
+    return issue.raw_jira_fields[jiraKey];
+  }
+
+  if (fieldId in issue) {
+    return (issue as any)[fieldId];
+  }
+  if (issue.custom_values && fieldId in issue.custom_values) {
+    return issue.custom_values[fieldId];
+  }
+  if (issue.raw_jira_fields && fieldId in issue.raw_jira_fields) {
+    return issue.raw_jira_fields[fieldId];
+  }
+  return undefined;
+}
+
+export function extractArrayItems(val: any): string[] {
+  if (val === null || val === undefined) return [];
+  if (Array.isArray(val)) {
+    return val
+      .map((item) => {
+        if (!item) return '';
+        if (typeof item === 'object') {
+          return item.name || item.value || item.displayName || item.label || String(item);
+        }
+        return String(item).trim();
+      })
+      .filter(Boolean);
+  }
+  if (typeof val === 'object') {
+    const s = val.name || val.value || val.displayName || val.label;
+    return s ? [String(s).trim()] : [];
+  }
+  if (typeof val === 'string') {
+    if (!val.trim()) return [];
+    // If it looks like JSON array
+    if (val.trim().startsWith('[') && val.trim().endsWith(']')) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return extractArrayItems(parsed);
+      } catch {}
+    }
+    // Check if comma-separated
+    if (val.includes(',')) {
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return [val.trim()];
+  }
+  return [String(val).trim()];
+}
+
+export function parseTargetItems(value: string | string[]): string[] {
+  if (Array.isArray(value)) return value.map(String).map((s) => s.trim()).filter(Boolean);
+  if (!value) return [];
+  const str = String(value).trim();
+  if (str.startsWith('[') && str.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) return parsed.map(String).map((s) => s.trim()).filter(Boolean);
+    } catch {}
+  }
+  if (str.includes(',')) {
+    return str.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  return [str];
+}
+
+export function isMultiValueField(fieldId: string, columns: CustomColumn[], issues: JiraIssue[]): boolean {
+  const col = columns.find((c) => c.id === fieldId);
+  const key = col?.jira_field_key || col?.id || fieldId;
+  const lowerKey = key.toLowerCase();
+  if (lowerKey.includes('component') || lowerKey.includes('label') || lowerKey.includes('multi')) {
+    return true;
+  }
+
+  // Sample issues to see if any issue has array value
+  for (const issue of issues) {
+    const val = getFieldValue(issue, fieldId, columns);
+    if (Array.isArray(val) && val.length > 0) return true;
+  }
+  return false;
+}
+
+export function getAllFilterableFields(columns: CustomColumn[], issues: JiraIssue[] = []): FieldDefinition[] {
   const custom: FieldDefinition[] = columns.map((col) => {
     let type: FieldCategory = 'text';
-    if (col.type === 'single_select') type = 'select';
-    else if (col.type === 'number') type = 'number';
-    else if (col.type === 'date') type = 'date';
+    if (col.type === 'single_select') {
+      type = 'select';
+    } else if (col.type === 'number') {
+      type = 'number';
+    } else if (col.type === 'date') {
+      type = 'date';
+    } else if (isMultiValueField(col.id, columns, issues)) {
+      type = 'multiselect';
+    }
     return {
       id: col.id,
       name: col.name,
@@ -37,7 +130,7 @@ export function getAllFilterableFields(columns: CustomColumn[]): FieldDefinition
   return [...BUILTIN_FIELDS, ...custom];
 }
 
-export function getFieldCategory(fieldId: string, columns: CustomColumn[]): FieldCategory {
+export function getFieldCategory(fieldId: string, columns: CustomColumn[], issues: JiraIssue[] = []): FieldCategory {
   const builtin = BUILTIN_FIELDS.find((f) => f.id === fieldId);
   if (builtin) return builtin.type;
 
@@ -46,14 +139,35 @@ export function getFieldCategory(fieldId: string, columns: CustomColumn[]): Fiel
     if (col.type === 'single_select') return 'select';
     if (col.type === 'number') return 'number';
     if (col.type === 'date') return 'date';
+    if (isMultiValueField(fieldId, columns, issues)) return 'multiselect';
   }
+
+  if (isMultiValueField(fieldId, columns, issues)) return 'multiselect';
   return 'text';
 }
 
 export function getAvailableOperators(category: FieldCategory): FilterOperator[] {
   switch (category) {
+    case 'multiselect':
+      return [
+        'has_any_of',
+        'has_all_of',
+        'has_none_of',
+        'is_exactly',
+        'contains',
+        'not_contains',
+        'is_empty',
+        'is_not_empty',
+      ];
     case 'select':
-      return ['equals', 'not_equals', 'is_empty', 'is_not_empty'];
+      return [
+        'has_any_of',
+        'has_all_of',
+        'equals',
+        'not_equals',
+        'is_empty',
+        'is_not_empty',
+      ];
     case 'number':
       return ['equals', 'not_equals', 'gt', 'gte', 'lt', 'lte', 'is_empty', 'is_not_empty'];
     case 'date':
@@ -63,6 +177,8 @@ export function getAvailableOperators(category: FieldCategory): FilterOperator[]
       return [
         'contains',
         'not_contains',
+        'has_any_of',
+        'has_all_of',
         'equals',
         'not_equals',
         'starts_with',
@@ -119,7 +235,7 @@ export function getFieldSelectOptions(
     return Array.from(types).map((t) => ({ id: t, label: t }));
   }
 
-  // Custom column options
+  // Custom column single_select options
   const col = columns.find((c) => c.id === fieldId);
   if (col && col.type === 'single_select' && col.options && col.options.length > 0) {
     return col.options.map((opt) => ({
@@ -129,20 +245,23 @@ export function getFieldSelectOptions(
     }));
   }
 
-  return [];
-}
+  // For Jira field or custom field: discover all unique values/items from existing issues!
+  const discovered = new Set<string>();
+  issues.forEach((issue) => {
+    const rawVal = getFieldValue(issue, fieldId, columns);
+    const items = extractArrayItems(rawVal);
+    items.forEach((item) => {
+      if (item && item.trim()) {
+        discovered.add(item.trim());
+      }
+    });
+  });
 
-export function getFieldValue(issue: JiraIssue, fieldId: string): any {
-  if (fieldId in issue) {
-    return (issue as any)[fieldId];
+  if (discovered.size > 0) {
+    return Array.from(discovered).map((val) => ({ id: val, label: val }));
   }
-  if (issue.custom_values && fieldId in issue.custom_values) {
-    return issue.custom_values[fieldId];
-  }
-  if (issue.raw_jira_fields && fieldId in issue.raw_jira_fields) {
-    return issue.raw_jira_fields[fieldId];
-  }
-  return undefined;
+
+  return [];
 }
 
 export function evaluateCondition(
@@ -151,7 +270,7 @@ export function evaluateCondition(
   columns: CustomColumn[]
 ): boolean {
   const { fieldId, operator, value } = condition;
-  const rawValue = getFieldValue(issue, fieldId);
+  const rawValue = getFieldValue(issue, fieldId, columns);
 
   // Check empty / not empty first
   const isEmpty =
@@ -167,6 +286,60 @@ export function evaluateCondition(
   if (isEmpty) return false;
 
   const target = (value ?? '').trim();
+  const issueItems = extractArrayItems(rawValue);
+  const targetItems = parseTargetItems(value);
+
+  // Multi-select operators (has_any_of, has_all_of, has_none_of, is_exactly)
+  if (operator === 'has_any_of') {
+    if (targetItems.length === 0) return true;
+    return targetItems.some((targetItem) =>
+      issueItems.some(
+        (issueItem) =>
+          issueItem.toLowerCase() === targetItem.toLowerCase() ||
+          issueItem.toLowerCase().includes(targetItem.toLowerCase())
+      )
+    );
+  }
+
+  if (operator === 'has_all_of') {
+    if (targetItems.length === 0) return true;
+    return targetItems.every((targetItem) =>
+      issueItems.some(
+        (issueItem) =>
+          issueItem.toLowerCase() === targetItem.toLowerCase() ||
+          issueItem.toLowerCase().includes(targetItem.toLowerCase())
+      )
+    );
+  }
+
+  if (operator === 'has_none_of') {
+    if (targetItems.length === 0) return true;
+    return !targetItems.some((targetItem) =>
+      issueItems.some(
+        (issueItem) =>
+          issueItem.toLowerCase() === targetItem.toLowerCase() ||
+          issueItem.toLowerCase().includes(targetItem.toLowerCase())
+      )
+    );
+  }
+
+  if (operator === 'is_exactly') {
+    if (targetItems.length === 0) return issueItems.length === 0;
+    if (issueItems.length !== targetItems.length) return false;
+    const targetSet = new Set(targetItems.map((t) => t.toLowerCase()));
+    return issueItems.every((item) => targetSet.has(item.toLowerCase()));
+  }
+
+  // If rawValue is an array and operator is standard (equals, not_equals, contains, not_contains)
+  if (Array.isArray(rawValue) || issueItems.length > 1) {
+    const hasMatch = issueItems.some(
+      (item) =>
+        item.toLowerCase() === target.toLowerCase() ||
+        item.toLowerCase().includes(target.toLowerCase())
+    );
+    if (operator === 'equals' || operator === 'contains') return hasMatch;
+    if (operator === 'not_equals' || operator === 'not_contains') return !hasMatch;
+  }
 
   // If custom column single_select, check both option id and option label
   const col = columns.find((c) => c.id === fieldId);
@@ -228,7 +401,6 @@ export function evaluateCondition(
     const dTarget = new Date(target);
     if (isNaN(dTarget.getTime())) return false;
 
-    // Normalize to date-only string comparison (YYYY-MM-DD) for 'equals'
     const dValDateStr = dVal.toISOString().slice(0, 10);
     const dTargetDateStr = dTarget.toISOString().slice(0, 10);
 
@@ -270,7 +442,6 @@ export function filterIssues(
   conjunction: FilterConjunction,
   columns: CustomColumn[]
 ): JiraIssue[] {
-  // If there are no conditions or conditions without a field, return all
   const validConditions = conditions.filter((c) => Boolean(c.fieldId));
   if (validConditions.length === 0) return issues;
 
@@ -278,7 +449,6 @@ export function filterIssues(
     if (conjunction === 'or') {
       return validConditions.some((cond) => evaluateCondition(issue, cond, columns));
     }
-    // Default is 'and'
     return validConditions.every((cond) => evaluateCondition(issue, cond, columns));
   });
 }

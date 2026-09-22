@@ -140,6 +140,9 @@ export const translations = {
     filter_fields_jira: 'Campos de Jira',
     filter_fields_custom: 'Columnas Personalizadas',
 
+    select_multiple_placeholder: '+ Elegir opciones...',
+    type_to_add_option: 'Escribe y pulsa Enter...',
+
     // Operators
     op_contains: 'contiene',
     op_not_contains: 'no contiene',
@@ -147,6 +150,10 @@ export const translations = {
     op_not_equals: 'no es igual a',
     op_starts_with: 'empieza con',
     op_ends_with: 'termina con',
+    op_has_any_of: 'tiene alguno de (has any of)',
+    op_has_all_of: 'tiene todos los (has all of)',
+    op_has_none_of: 'no tiene ninguno de (has none of)',
+    op_is_exactly: 'es exactamente el conjunto (is exactly)',
     op_is_empty: 'está vacío',
     op_is_not_empty: 'no está vacío',
     op_gt: 'es mayor que (>)',
@@ -296,6 +303,9 @@ export const translations = {
     filter_fields_jira: 'Jira Fields',
     filter_fields_custom: 'Custom Columns',
 
+    select_multiple_placeholder: '+ Select options...',
+    type_to_add_option: 'Type and press Enter...',
+
     // Operators
     op_contains: 'contains',
     op_not_contains: 'does not contain',
@@ -303,6 +313,10 @@ export const translations = {
     op_not_equals: 'is not',
     op_starts_with: 'starts with',
     op_ends_with: 'ends with',
+    op_has_any_of: 'has any of',
+    op_has_all_of: 'has all of',
+    op_has_none_of: 'has none of',
+    op_is_exactly: 'is exactly',
     op_is_empty: 'is empty',
     op_is_not_empty: 'is not empty',
     op_gt: 'is greater than (>)',

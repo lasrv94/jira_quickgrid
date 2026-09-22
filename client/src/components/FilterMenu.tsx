@@ -8,6 +8,7 @@ import {
   getAvailableOperators,
   getFieldCategory,
   getFieldSelectOptions,
+  parseTargetItems,
 } from '../utils/filterEvaluator';
 
 interface Props {
@@ -65,7 +66,7 @@ export const FilterMenu: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  const allFields = getAllFilterableFields(columns);
+  const allFields = getAllFilterableFields(columns, issues);
   const builtinFields = allFields.filter((f) => !f.isCustom);
   const customFields = allFields.filter((f) => f.isCustom);
 
@@ -92,7 +93,7 @@ export const FilterMenu: React.FC<Props> = ({
 
         // If fieldId changed, reset operator to valid operator for that field
         if (updates.fieldId && updates.fieldId !== c.fieldId) {
-          const category = getFieldCategory(updates.fieldId, columns);
+          const category = getFieldCategory(updates.fieldId, columns, issues);
           const validOps = getAvailableOperators(category);
           updated.operator = validOps[0] || 'equals';
           updated.value = '';
@@ -101,6 +102,24 @@ export const FilterMenu: React.FC<Props> = ({
         return updated;
       })
     );
+  };
+
+  const handleAddTag = (conditionId: string, newTag: string) => {
+    const condition = conditions.find((c) => c.id === conditionId);
+    if (!condition) return;
+    const current = parseTargetItems(condition.value);
+    if (!current.some((t) => t.toLowerCase() === newTag.toLowerCase())) {
+      const next = [...current, newTag];
+      handleUpdateCondition(conditionId, { value: JSON.stringify(next) });
+    }
+  };
+
+  const handleRemoveTag = (conditionId: string, tagToRemove: string) => {
+    const condition = conditions.find((c) => c.id === conditionId);
+    if (!condition) return;
+    const current = parseTargetItems(condition.value);
+    const next = current.filter((t) => t.toLowerCase() !== tagToRemove.toLowerCase());
+    handleUpdateCondition(conditionId, { value: JSON.stringify(next) });
   };
 
   const handleClearAll = () => {
@@ -117,6 +136,14 @@ export const FilterMenu: React.FC<Props> = ({
         return t.op_equals;
       case 'not_equals':
         return t.op_not_equals;
+      case 'has_any_of':
+        return t.op_has_any_of;
+      case 'has_all_of':
+        return t.op_has_all_of;
+      case 'has_none_of':
+        return t.op_has_none_of;
+      case 'is_exactly':
+        return t.op_is_exactly;
       case 'starts_with':
         return t.op_starts_with;
       case 'ends_with':
@@ -147,7 +174,7 @@ export const FilterMenu: React.FC<Props> = ({
   return (
     <div
       ref={menuRef}
-      className="absolute left-0 sm:left-auto top-full mt-2 w-[calc(100vw-2rem)] sm:w-[620px] max-w-[620px] bg-white rounded-xl shadow-2xl border border-gray-200 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col overflow-hidden text-gray-800"
+      className="absolute left-0 sm:left-auto top-full mt-2 w-[calc(100vw-2rem)] sm:w-[680px] max-w-[680px] bg-white rounded-xl shadow-2xl border border-gray-200 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col overflow-hidden text-gray-800"
       style={{ maxHeight: 'calc(100vh - 120px)' }}
     >
       {/* Top Header */}
@@ -204,7 +231,7 @@ export const FilterMenu: React.FC<Props> = ({
       )}
 
       {/* Conditions List */}
-      <div className="p-4 overflow-y-auto max-h-[380px] space-y-2.5">
+      <div className="p-4 overflow-y-auto max-h-[400px] space-y-2.5">
         {conditions.length === 0 ? (
           <div className="py-6 px-4 text-center rounded-xl border border-dashed border-gray-200 bg-gray-50/50">
             <Filter className="w-6 h-6 text-gray-300 mx-auto mb-2" />
@@ -221,21 +248,27 @@ export const FilterMenu: React.FC<Props> = ({
         ) : (
           conditions.map((condition, idx) => {
             const isFirst = idx === 0;
-            const fieldCategory = getFieldCategory(condition.fieldId, columns);
+            const fieldCategory = getFieldCategory(condition.fieldId, columns, issues);
             const availableOps = getAvailableOperators(fieldCategory);
             const selectOptions = getFieldSelectOptions(condition.fieldId, columns, issues);
             const isNoValueOperator =
               condition.operator === 'is_empty' ||
               condition.operator === 'is_not_empty' ||
               condition.operator === 'is_today';
+            const isMultiItemOperator =
+              condition.operator === 'has_any_of' ||
+              condition.operator === 'has_all_of' ||
+              condition.operator === 'has_none_of' ||
+              condition.operator === 'is_exactly';
+            const selectedTags = parseTargetItems(condition.value);
 
             return (
               <div
                 key={condition.id}
-                className="flex items-center gap-2 p-2 bg-gray-50/70 hover:bg-gray-100/60 rounded-xl border border-gray-200 transition-colors"
+                className="flex items-start gap-2 p-2.5 bg-gray-50/70 hover:bg-gray-100/60 rounded-xl border border-gray-200 transition-colors"
               >
                 {/* Prefix Label (Where / And / Or) */}
-                <div className="w-14 shrink-0 text-right">
+                <div className="w-14 shrink-0 text-right pt-2">
                   {isFirst ? (
                     <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                       {t.conjunction_where}
@@ -248,49 +281,111 @@ export const FilterMenu: React.FC<Props> = ({
                 </div>
 
                 {/* Field Selector */}
-                <select
-                  value={condition.fieldId}
-                  onChange={(e) => handleUpdateCondition(condition.id, { fieldId: e.target.value })}
-                  className="text-xs font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-44 shrink-0 transition-colors cursor-pointer"
-                >
-                  <optgroup label={t.filter_fields_jira}>
-                    {builtinFields.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                  {customFields.length > 0 && (
-                    <optgroup label={t.filter_fields_custom}>
-                      {customFields.map((f) => (
+                <div className="pt-0.5">
+                  <select
+                    value={condition.fieldId}
+                    onChange={(e) => handleUpdateCondition(condition.id, { fieldId: e.target.value })}
+                    className="text-xs font-semibold text-gray-800 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40 shrink-0 transition-colors cursor-pointer"
+                  >
+                    <optgroup label={t.filter_fields_jira}>
+                      {builtinFields.map((f) => (
                         <option key={f.id} value={f.id}>
                           {f.name}
                         </option>
                       ))}
                     </optgroup>
-                  )}
-                </select>
+                    {customFields.length > 0 && (
+                      <optgroup label={t.filter_fields_custom}>
+                        {customFields.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
 
                 {/* Operator Selector */}
-                <select
-                  value={condition.operator}
-                  onChange={(e) =>
-                    handleUpdateCondition(condition.id, { operator: e.target.value as FilterOperator })
-                  }
-                  className="text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-36 shrink-0 transition-colors cursor-pointer"
-                >
-                  {availableOps.map((op) => (
-                    <option key={op} value={op}>
-                      {getOperatorLabel(op)}
-                    </option>
-                  ))}
-                </select>
+                <div className="pt-0.5">
+                  <select
+                    value={condition.operator}
+                    onChange={(e) =>
+                      handleUpdateCondition(condition.id, { operator: e.target.value as FilterOperator })
+                    }
+                    className="text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-44 shrink-0 transition-colors cursor-pointer"
+                  >
+                    {availableOps.map((op) => (
+                      <option key={op} value={op}>
+                        {getOperatorLabel(op)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                {/* Value Input */}
-                <div className="flex-1 min-w-0">
+                {/* Value Input Area */}
+                <div className="flex-1 min-w-0 pt-0.5">
                   {isNoValueOperator ? (
                     <div className="text-[11px] text-gray-400 italic px-2 py-1.5 bg-gray-100/60 rounded-lg border border-gray-200/50">
                       {lang === 'es' ? 'Condición sin valor' : 'No value needed'}
+                    </div>
+                  ) : isMultiItemOperator ? (
+                    /* Multi-Item Tag / Pill Picker */
+                    <div className="flex flex-wrap items-center gap-1.5 p-1 bg-white border border-gray-300 rounded-lg min-h-[34px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                      {selectedTags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 animate-in fade-in"
+                        >
+                          <span className="truncate max-w-[120px]">{tag}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTag(condition.id, tag)}
+                            className="text-indigo-400 hover:text-indigo-700 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+
+                      {/* Dropdown selector for discovered options */}
+                      {selectOptions.filter((opt) => !selectedTags.some((st) => st.toLowerCase() === opt.label.toLowerCase())).length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAddTag(condition.id, e.target.value);
+                            }
+                          }}
+                          className="text-[11px] font-medium bg-gray-50 hover:bg-gray-100 border border-dashed border-gray-300 rounded px-1.5 py-0.5 text-gray-700 cursor-pointer"
+                        >
+                          <option value="">{t.select_multiple_placeholder}</option>
+                          {selectOptions
+                            .filter((opt) => !selectedTags.some((st) => st.toLowerCase() === opt.label.toLowerCase()))
+                            .map((opt) => (
+                              <option key={opt.id} value={opt.label}>
+                                {opt.label}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+
+                      {/* Text Input to type and press Enter */}
+                      <input
+                        type="text"
+                        placeholder={selectedTags.length === 0 ? t.type_to_add_option : '+ nuevo...'}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',') {
+                            e.preventDefault();
+                            const val = e.currentTarget.value.trim();
+                            if (val) {
+                              handleAddTag(condition.id, val);
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }}
+                        className="text-xs px-1.5 py-0.5 flex-1 min-w-[70px] focus:outline-none bg-transparent"
+                      />
                     </div>
                   ) : selectOptions.length > 0 ? (
                     <select
@@ -300,7 +395,7 @@ export const FilterMenu: React.FC<Props> = ({
                     >
                       <option value="">{t.select_option_placeholder}</option>
                       {selectOptions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>
+                        <option key={opt.id} value={opt.label}>
                           {opt.label}
                         </option>
                       ))}
@@ -332,14 +427,16 @@ export const FilterMenu: React.FC<Props> = ({
                 </div>
 
                 {/* Delete Condition Button */}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveCondition(condition.id)}
-                  title={t.filter_remove_condition}
-                  className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <div className="pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCondition(condition.id)}
+                    title={t.filter_remove_condition}
+                    className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             );
           })
