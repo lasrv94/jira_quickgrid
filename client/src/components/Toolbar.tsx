@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Columns,
+  FileDown,
   Layers,
   Plus,
   RefreshCw,
@@ -26,6 +27,7 @@ interface Props {
   onToggleColumnVisibility: (colId: string) => void;
   onOpenAddColumn: () => void;
   onOpenSettings: () => void;
+  onExportPdf?: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   groupBy: string | null;
@@ -47,6 +49,7 @@ export const Toolbar: React.FC<Props> = ({
   onToggleColumnVisibility,
   onOpenAddColumn,
   onOpenSettings,
+  onExportPdf,
   searchQuery,
   onSearchChange,
   groupBy,
@@ -317,6 +320,18 @@ export const Toolbar: React.FC<Props> = ({
           <Plus className="w-3.5 h-3.5 text-blue-600" />
           <span>{t.add_column_btn}</span>
         </button>
+
+        {/* PDF Export Button */}
+        {onExportPdf && (
+          <button
+            onClick={onExportPdf}
+            title={t.export_pdf}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 transition-colors border border-rose-200 shadow-2xs"
+          >
+            <FileDown className="w-3.5 h-3.5 text-rose-600" />
+            <span>{t.export_pdf}</span>
+          </button>
+        )}
 
         {/* Settings Button */}
         <button

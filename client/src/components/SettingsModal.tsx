@@ -13,9 +13,10 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Trash2,
   X,
 } from 'lucide-react';
-import { createColumn, fetchJiraFields, syncIssues, updateConfig, validateJiraFilter } from '../services/api';
+import { createColumn, deleteColumn, fetchJiraFields, syncIssues, updateConfig, validateJiraFilter } from '../services/api';
 import type { AppConfig, CustomColumn, JiraFieldInfo } from '../types';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
@@ -159,6 +160,38 @@ export const SettingsModal: React.FC<Props> = ({
       alert(`Error al agregar columna: ${err.message}`);
     } finally {
       setAddingFieldId(null);
+    }
+  };
+
+  const [removingColId, setRemovingColId] = useState<string | null>(null);
+
+  const handleRemoveJiraFieldColumn = async (fieldId: string) => {
+    const col = existingColumns.find(
+      (c) => c.jira_field_key === fieldId || c.id === fieldId || c.name.toLowerCase() === fieldId.toLowerCase()
+    );
+    if (!col) return;
+    if (!window.confirm(t.remove_column_confirm)) return;
+    setRemovingColId(fieldId);
+    try {
+      await deleteColumn(col.id);
+      await onRefreshConfig();
+    } catch (err: any) {
+      alert(`Error al eliminar columna: ${err.message}`);
+    } finally {
+      setRemovingColId(null);
+    }
+  };
+
+  const handleDeleteExistingColumn = async (columnId: string) => {
+    if (!window.confirm(t.remove_column_confirm)) return;
+    setRemovingColId(columnId);
+    try {
+      await deleteColumn(columnId);
+      await onRefreshConfig();
+    } catch (err: any) {
+      alert(`Error al eliminar columna: ${err.message}`);
+    } finally {
+      setRemovingColId(null);
     }
   };
 
@@ -534,7 +567,23 @@ export const SettingsModal: React.FC<Props> = ({
                     <span>{validatingFilter ? t.validating : t.validate_filter_btn}</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-1">{t.filter_id_hint}</p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[11px] text-gray-400">{t.filter_id_hint}</p>
+                  {(filterId || filterJql) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterId('');
+                        setFilterJql('');
+                        setFilterValidation(null);
+                      }}
+                      className="text-[11px] text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>{t.clear_filter_btn}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -719,10 +768,26 @@ export const SettingsModal: React.FC<Props> = ({
 
                         <div>
                           {alreadyAdded ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              <Check className="w-3 h-3" />
-                              <span>{t.column_active}</span>
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                <Check className="w-3 h-3" />
+                                <span>{t.column_active}</span>
+                              </span>
+                              <button
+                                type="button"
+                                disabled={removingColId === field.id}
+                                onClick={() => handleRemoveJiraFieldColumn(field.id)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition-colors disabled:opacity-50"
+                                title={t.remove_column}
+                              >
+                                {removingColId === field.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3 h-3" />
+                                )}
+                                <span>{t.remove_column}</span>
+                              </button>
+                            </div>
                           ) : (
                             <button
                               type="button"
@@ -742,6 +807,46 @@ export const SettingsModal: React.FC<Props> = ({
                       </div>
                     );
                   })
+                )}
+              </div>
+
+              {/* Active Columns in Grid */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-blue-600" />
+                    {t.active_columns_section} ({existingColumns.length})
+                  </span>
+                </div>
+                {existingColumns.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">{t.no_active_custom_columns}</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {existingColumns.map((col) => (
+                      <div
+                        key={col.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          {col.type === 'jira_field' || col.jira_field_key ? (
+                            <span className="px-1 text-[9px] font-mono bg-blue-100 text-blue-700 rounded font-bold">JIRA</span>
+                          ) : (
+                            <span className="w-2 h-2 rounded-full bg-blue-500" />
+                          )}
+                          <span className="font-medium text-gray-800 truncate" title={col.name}>{col.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteExistingColumn(col.id)}
+                          disabled={removingColId === col.id}
+                          className="text-gray-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors ml-2"
+                          title={t.remove_column}
+                        >
+                          {removingColId === col.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

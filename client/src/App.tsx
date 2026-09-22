@@ -24,6 +24,7 @@ import {
 import type { AppConfig, CustomColumn, JiraFilter, JiraIssue, SavedView } from './types';
 import type { Language } from './utils/i18n';
 import { getTranslation } from './utils/i18n';
+import { exportIssuesToPdf } from './utils/pdfExport';
 
 export function App() {
   const [lang, setLang] = useState<Language>(() => {
@@ -205,6 +206,28 @@ export function App() {
     }
   };
 
+  const handleUpdateColumnWidth = async (columnId: string, width: number) => {
+    setColumns((prev) =>
+      prev.map((c) => (c.id === columnId ? { ...c, width } : c))
+    );
+    try {
+      await updateColumn(columnId, { width });
+    } catch (err) {
+      console.error('Error saving column width:', err);
+    }
+  };
+
+  const handleExportPdf = () => {
+    exportIssuesToPdf({
+      issues: filteredAndSortedIssues,
+      columns,
+      groupBy,
+      config,
+      filterName: filters.find((f) => f.id === selectedFilterId)?.name,
+      lang,
+    });
+  };
+
   // Views handling
   const handleSelectView = (view: SavedView) => {
     setActiveViewId(view.id);
@@ -372,6 +395,7 @@ export function App() {
         onToggleColumnVisibility={handleToggleColumnVisibility}
         onOpenAddColumn={() => setIsAddColumnOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onExportPdf={handleExportPdf}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         groupBy={groupBy}
@@ -399,7 +423,9 @@ export function App() {
           onOpenArchivyDrawer={(issue) => setActiveArchivyIssue(issue)}
           onOpenAddColumn={() => setIsAddColumnOpen(true)}
           onDeleteColumn={handleDeleteColumn}
+          onUpdateColumnWidth={handleUpdateColumnWidth}
           groupBy={groupBy}
+          jiraDomain={config?.jira_domain}
           lang={lang}
         />
       )}

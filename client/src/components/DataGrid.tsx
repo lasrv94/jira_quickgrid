@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Edit2,
+  ExternalLink,
   Lock,
   Plus,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 import type { CustomColumn, JiraIssue } from '../types';
 import { getColorClasses } from '../utils/colors';
@@ -19,7 +21,9 @@ interface Props {
   onOpenArchivyDrawer: (issue: JiraIssue) => void;
   onOpenAddColumn: () => void;
   onDeleteColumn: (colId: string) => Promise<void>;
+  onUpdateColumnWidth?: (colId: string, width: number) => Promise<void>;
   groupBy: string | null;
+  jiraDomain?: string;
   lang?: Language;
 }
 
@@ -30,13 +34,67 @@ export const DataGrid: React.FC<Props> = ({
   onOpenArchivyDrawer,
   onOpenAddColumn,
   onDeleteColumn,
+  onUpdateColumnWidth,
   groupBy,
+  jiraDomain,
   lang = 'es',
 }) => {
   const t = getTranslation(lang);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [activeDropdown, setActiveDropdown] = useState<{ issueKey: string; colId: string } | null>(null);
   const [editingText, setEditingText] = useState<{ issueKey: string; colId: string; val: string } | null>(null);
+
+  // Column Widths State (allows mouse dragging to expand / shrink columns)
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {
+      key: 120,
+      summary: 340,
+      status: 135,
+      priority: 120,
+      assignee: 150,
+    };
+    columns.forEach((col) => {
+      initial[col.id] = col.width || 160;
+    });
+    return initial;
+  });
+
+  useEffect(() => {
+    setColumnWidths((prev) => {
+      const next = { ...prev };
+      columns.forEach((col) => {
+        if (!next[col.id] || (col.width && next[col.id] !== col.width && !prev[col.id])) {
+          next[col.id] = col.width || 160;
+        }
+      });
+      return next;
+    });
+  }, [columns]);
+
+  const handleResizeStart = (e: React.MouseEvent, columnId: string, startWidth: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const diff = moveEvent.clientX - startX;
+      const newWidth = Math.max(65, startWidth + diff);
+      setColumnWidths((prev) => ({ ...prev, [columnId]: newWidth }));
+    };
+
+    const onMouseUp = (upEvent: MouseEvent) => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      const diff = upEvent.clientX - startX;
+      const finalWidth = Math.max(65, startWidth + diff);
+      if (onUpdateColumnWidth && columns.some((c) => c.id === columnId)) {
+        onUpdateColumnWidth(columnId, finalWidth);
+      }
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   const visibleCustomColumns = useMemo(
     () => columns.filter((c) => c.is_visible).sort((a, b) => a.position - b.position),
@@ -199,67 +257,130 @@ export const DataGrid: React.FC<Props> = ({
         {/* Table Header */}
         <thead className="bg-[#f8f9fb] sticky top-0 z-20 border-b border-gray-200 text-gray-600 font-semibold uppercase text-[11px] tracking-wider">
           <tr>
-            {/* Jira Standard Columns */}
+            {/* Row Number */}
             <th className="w-10 px-3 py-2.5 text-center border-r border-gray-200 bg-[#f8f9fb] sticky left-0 z-30">
               #
             </th>
-            <th className="w-28 px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-10 z-30">
+
+            {/* Jira Key */}
+            <th
+              style={{ width: columnWidths.key || 120 }}
+              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-10 z-30 relative group"
+            >
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
                 <span>{t.col_key}</span>
               </div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                onMouseDown={(e) => handleResizeStart(e, 'key', columnWidths.key || 120)}
+                title="Arrastrar para redimensionar"
+              />
             </th>
-            <th className="min-w-[280px] max-w-[400px] px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-38 z-30">
+
+            {/* Summary */}
+            <th
+              style={{ width: columnWidths.summary || 340, minWidth: 200 }}
+              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-40 z-30 relative group"
+            >
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
                 <span>{t.col_summary}</span>
               </div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                onMouseDown={(e) => handleResizeStart(e, 'summary', columnWidths.summary || 340)}
+                title="Arrastrar para redimensionar"
+              />
             </th>
-            <th className="w-32 px-3 py-2.5 border-r border-gray-200">
+
+            {/* Status */}
+            <th
+              style={{ width: columnWidths.status || 135 }}
+              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
+            >
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
                 <span>{t.col_status}</span>
               </div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                onMouseDown={(e) => handleResizeStart(e, 'status', columnWidths.status || 135)}
+                title="Arrastrar para redimensionar"
+              />
             </th>
-            <th className="w-28 px-3 py-2.5 border-r border-gray-200">
+
+            {/* Priority */}
+            <th
+              style={{ width: columnWidths.priority || 120 }}
+              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
+            >
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
                 <span>{t.col_priority}</span>
               </div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                onMouseDown={(e) => handleResizeStart(e, 'priority', columnWidths.priority || 120)}
+                title="Arrastrar para redimensionar"
+              />
             </th>
-            <th className="w-36 px-3 py-2.5 border-r border-gray-200">
+
+            {/* Assignee */}
+            <th
+              style={{ width: columnWidths.assignee || 150 }}
+              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
+            >
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
                 <span>{t.col_assignee}</span>
               </div>
+              <div
+                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                onMouseDown={(e) => handleResizeStart(e, 'assignee', columnWidths.assignee || 150)}
+                title="Arrastrar para redimensionar"
+              />
             </th>
 
             {/* Custom Local & Jira Columns */}
-            {visibleCustomColumns.map((col) => (
-              <th
-                key={col.id}
-                style={{ width: col.width }}
-                className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] group"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="flex items-center gap-1.5 truncate">
-                    {col.type === 'jira_field' || col.jira_field_key ? (
-                      <span className="px-1 py-0.2 text-[9px] bg-blue-100 text-blue-800 font-mono rounded font-bold">JIRA</span>
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    )}
-                    <span className="font-bold text-gray-800 truncate" title={col.name}>{col.name}</span>
+            {visibleCustomColumns.map((col) => {
+              const currentW = columnWidths[col.id] || col.width || 160;
+              return (
+                <th
+                  key={col.id}
+                  style={{ width: currentW, minWidth: 80 }}
+                  className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] group relative select-none"
+                >
+                  <div className="flex items-center justify-between gap-1 pr-1">
+                    <div className="flex items-center gap-1.5 truncate">
+                      {col.type === 'jira_field' || col.jira_field_key ? (
+                        <span className="px-1 py-0.2 text-[9px] bg-blue-100 text-blue-800 font-mono rounded font-bold">JIRA</span>
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      )}
+                      <span className="font-bold text-gray-800 truncate" title={col.name}>{col.name}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(t.remove_column_confirm)) {
+                          onDeleteColumn(col.id);
+                        }
+                      }}
+                      title={t.remove_column}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 p-0.5 rounded transition-opacity"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => onDeleteColumn(col.id)}
-                    title="Eliminar columna"
-                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 p-0.5 rounded transition-opacity"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </th>
-            ))}
+                  {/* Column Resize Handle */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+                    onMouseDown={(e) => handleResizeStart(e, col.id, currentW)}
+                    title="Arrastrar para redimensionar"
+                  />
+                </th>
+              );
+            })}
 
             {/* Add Column Header Button */}
             <th className="w-24 px-3 py-2.5 text-center bg-[#f8f9fb]">
@@ -318,9 +439,26 @@ export const DataGrid: React.FC<Props> = ({
 
                       {/* Key */}
                       <td className="px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap">
-                        <span className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer">
-                          {issue.key}
-                        </span>
+                        <a
+                          href={
+                            jiraDomain
+                              ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/browse/${issue.key}`
+                              : '#'
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            if (!jiraDomain) {
+                              e.preventDefault();
+                              alert(lang === 'es' ? 'Configura tu dominio Jira en Ajustes (⚙️) para abrir tickets.' : 'Configure your Jira domain in Settings (⚙️) to open tickets.');
+                            }
+                          }}
+                          className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 group/key"
+                          title={jiraDomain ? `${t.open_in_jira} (${issue.key})` : issue.key}
+                        >
+                          <span>{issue.key}</span>
+                          <ExternalLink className="w-3 h-3 opacity-0 group-hover/key:opacity-100 transition-opacity text-blue-500" />
+                        </a>
                       </td>
 
                       {/* Summary */}
@@ -396,7 +534,12 @@ export const DataGrid: React.FC<Props> = ({
                             activeDropdown?.issueKey === issue.key && activeDropdown?.colId === col.id;
 
                           return (
-                            <td key={col.id} className="px-3 py-1.5 border-r border-gray-100 relative">
+                            <td
+                              key={col.id}
+                              className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/30"
+                              onDoubleClick={() => setActiveDropdown({ issueKey: issue.key, colId: col.id })}
+                              title={t.dblclick_to_edit}
+                            >
                               <div
                                 onClick={() =>
                                   setActiveDropdown(isDropdownOpen ? null : { issueKey: issue.key, colId: col.id })
@@ -481,22 +624,31 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
-                            className="px-3 py-1.5 border-r border-gray-100 cursor-text"
+                            className="px-3 py-1.5 border-r border-gray-100 cursor-pointer relative group/cell hover:bg-blue-50/40 transition-colors"
+                            onDoubleClick={() => {
+                              setEditingText({
+                                issueKey: issue.key,
+                                colId: col.id,
+                                val: rawValue !== null && rawValue !== undefined ? String(rawValue) : '',
+                              });
+                            }}
                             onClick={() => {
-                              if (!isEditing) {
+                              if (!rawValue && !isEditing) {
                                 setEditingText({
                                   issueKey: issue.key,
                                   colId: col.id,
-                                  val: rawValue ? String(rawValue) : '',
+                                  val: '',
                                 });
                               }
                             }}
+                            title={t.dblclick_to_edit}
                           >
                             {isEditing ? (
                               <input
                                 autoFocus
-                                type={col.type === 'number' ? 'number' : 'text'}
+                                type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
                                 value={editingText.val}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) =>
                                   setEditingText({ ...editingText, val: e.target.value })
                                 }
@@ -512,15 +664,20 @@ export const DataGrid: React.FC<Props> = ({
                                     setEditingText(null);
                                   }
                                 }}
-                                className="w-full px-1.5 py-0.5 text-xs bg-blue-50 border border-blue-400 rounded focus:outline-none"
+                                className="w-full px-1.5 py-0.5 text-xs bg-blue-50 border border-blue-500 rounded focus:outline-none shadow-inner"
                               />
                             ) : (
-                              <div className="truncate text-gray-700 hover:text-gray-900 min-h-[18px]">
-                                {rawValue ? (
-                                  <span>{String(rawValue)}</span>
-                                ) : (
-                                  <span className="text-gray-300 italic">+ Vacío</span>
-                                )}
+                              <div className="flex items-center justify-between min-h-[20px]">
+                                <span className="truncate text-gray-700">
+                                  {rawValue !== null && rawValue !== undefined && rawValue !== '' ? (
+                                    String(rawValue)
+                                  ) : (
+                                    <span className="text-gray-300 italic group-hover/cell:text-gray-400">
+                                      {t.col_empty}
+                                    </span>
+                                  )}
+                                </span>
+                                <Edit2 className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0" />
                               </div>
                             )}
                           </td>
