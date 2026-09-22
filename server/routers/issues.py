@@ -53,10 +53,19 @@ def list_issues(db: Session = Depends(get_db)):
                 jira_updated_at=issue.jira_updated_at,
                 last_synced_at=issue.last_synced_at,
                 is_archived_in_jira=issue.is_archived_in_jira,
-                custom_values=custom_dict
+                custom_values=custom_dict,
+                raw_jira_fields=issue.raw_jira_fields
             )
         )
     return results
+
+@router.get("/jira/fields")
+async def list_jira_fields(db: Session = Depends(get_db)):
+    return await JiraService.get_jira_fields(db)
+
+@router.post("/jira/validate-filter")
+async def validate_filter(filter_id: Optional[str] = None, jql: Optional[str] = None, db: Session = Depends(get_db)):
+    return await JiraService.validate_filter_or_jql(db, filter_id=filter_id, jql=jql)
 
 @router.post("/issues/{key}/custom-values")
 def update_issue_custom_value(key: str, data: SetCustomValueRequest, db: Session = Depends(get_db)):

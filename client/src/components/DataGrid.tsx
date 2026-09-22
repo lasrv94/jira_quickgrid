@@ -107,6 +107,87 @@ export const DataGrid: React.FC<Props> = ({
     }
   };
 
+  const renderJiraFieldValue = (val: any) => {
+    if (val === null || val === undefined || val === '') {
+      return <span className="text-gray-300 italic">-</span>;
+    }
+    if (typeof val === 'boolean') {
+      return (
+        <span
+          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+            val ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          {val ? 'Sí' : 'No'}
+        </span>
+      );
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0) return <span className="text-gray-300 italic">Vacío</span>;
+      return (
+        <div className="flex flex-wrap gap-1 max-w-[240px]">
+          {val.map((item, idx) => {
+            const text =
+              typeof item === 'object' && item !== null
+                ? item.name || item.value || item.displayName || JSON.stringify(item)
+                : String(item);
+            return (
+              <span
+                key={idx}
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 truncate max-w-[120px]"
+                title={text}
+              >
+                {text}
+              </span>
+            );
+          })}
+        </div>
+      );
+    }
+    if (typeof val === 'object') {
+      if (val.displayName) {
+        return (
+          <div className="flex items-center gap-1.5">
+            {val.avatarUrls?.['16x16'] || val.avatarUrls?.['24x24'] ? (
+              <img
+                src={val.avatarUrls['16x16'] || val.avatarUrls['24x24']}
+                alt={val.displayName}
+                className="w-4 h-4 rounded-full border border-gray-200"
+              />
+            ) : null}
+            <span className="truncate text-xs text-gray-700">{val.displayName}</span>
+          </div>
+        );
+      }
+      if (val.name) {
+        return <span className="text-xs text-gray-800 font-medium truncate">{val.name}</span>;
+      }
+      if (val.value) {
+        return <span className="text-xs text-gray-800 font-medium truncate">{val.value}</span>;
+      }
+      if (val.type === 'doc' && Array.isArray(val.content)) {
+        const extractText = (node: any): string => {
+          if (!node) return '';
+          if (node.text) return node.text;
+          if (Array.isArray(node.content)) return node.content.map(extractText).join(' ');
+          return '';
+        };
+        const text = extractText(val).trim();
+        return (
+          <span className="text-xs text-gray-700 truncate block max-w-[200px]" title={text}>
+            {text || '-'}
+          </span>
+        );
+      }
+      return <span className="text-xs text-gray-500 font-mono truncate">{JSON.stringify(val)}</span>;
+    }
+    return (
+      <span className="text-xs text-gray-800 truncate block max-w-[200px]" title={String(val)}>
+        {String(val)}
+      </span>
+    );
+  };
+
   return (
     <div className="flex-1 overflow-auto bg-white relative">
       <table className="w-full text-left border-collapse text-xs select-none">
@@ -148,7 +229,7 @@ export const DataGrid: React.FC<Props> = ({
               </div>
             </th>
 
-            {/* Custom Local Columns */}
+            {/* Custom Local & Jira Columns */}
             {visibleCustomColumns.map((col) => (
               <th
                 key={col.id}
@@ -157,12 +238,16 @@ export const DataGrid: React.FC<Props> = ({
               >
                 <div className="flex items-center justify-between gap-1">
                   <div className="flex items-center gap-1.5 truncate">
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    <span className="font-bold text-gray-800">{col.name}</span>
+                    {col.type === 'jira_field' || col.jira_field_key ? (
+                      <span className="px-1 py-0.2 text-[9px] bg-blue-100 text-blue-800 font-mono rounded font-bold">JIRA</span>
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    )}
+                    <span className="font-bold text-gray-800 truncate" title={col.name}>{col.name}</span>
                   </div>
                   <button
                     onClick={() => onDeleteColumn(col.id)}
-                    title="Eliminar columna local"
+                    title="Eliminar columna"
                     className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 p-0.5 rounded transition-opacity"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -283,6 +368,21 @@ export const DataGrid: React.FC<Props> = ({
                       {/* Custom Columns Cells */}
                       {visibleCustomColumns.map((col) => {
                         const rawValue = issue.custom_values?.[col.id];
+
+                        // Jira Native Field Cell
+                        if (col.type === 'jira_field' || col.jira_field_key) {
+                          const fieldKey = col.jira_field_key || col.id;
+                          const jiraVal = issue.raw_jira_fields?.[fieldKey];
+                          return (
+                            <td
+                              key={col.id}
+                              className="px-3 py-1.5 border-r border-gray-100 max-w-[240px]"
+                              title={`Jira field: ${fieldKey}`}
+                            >
+                              {renderJiraFieldValue(jiraVal)}
+                            </td>
+                          );
+                        }
 
                         // Single Select Cell
                         if (col.type === 'single_select') {

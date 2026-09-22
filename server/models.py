@@ -52,6 +52,7 @@ class CustomColumn(Base):
     position = Column(Integer, default=0)
     is_visible = Column(Boolean, default=True)
     width = Column(Integer, default=160)
+    jira_field_key = Column(String(128), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     values = relationship("IssueCustomValue", back_populates="column", cascade="all, delete-orphan")
@@ -102,11 +103,12 @@ class SelectOption(BaseModel):
 
 class CustomColumnCreate(BaseModel):
     name: str
-    type: str  # single_select, text, long_text, date, number, archivy_link
+    type: str  # single_select, text, long_text, date, number, archivy_link, jira_field
     options: Optional[List[Dict[str, Any]]] = None
     position: Optional[int] = 0
     is_visible: Optional[bool] = True
     width: Optional[int] = 160
+    jira_field_key: Optional[str] = None
 
 class CustomColumnUpdate(BaseModel):
     name: Optional[str] = None
@@ -115,6 +117,7 @@ class CustomColumnUpdate(BaseModel):
     position: Optional[int] = None
     is_visible: Optional[bool] = None
     width: Optional[int] = None
+    jira_field_key: Optional[str] = None
 
 class CustomColumnOut(BaseModel):
     id: str
@@ -124,6 +127,7 @@ class CustomColumnOut(BaseModel):
     position: int
     is_visible: bool
     width: int
+    jira_field_key: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -147,6 +151,7 @@ class IssueOut(BaseModel):
     last_synced_at: Optional[datetime] = None
     is_archived_in_jira: bool = False
     custom_values: Dict[str, Any] = {}
+    raw_jira_fields: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 

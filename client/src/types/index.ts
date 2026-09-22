@@ -4,7 +4,8 @@ export type ColumnType =
   | 'long_text'
   | 'date'
   | 'number'
-  | 'archivy_link';
+  | 'archivy_link'
+  | 'jira_field';
 
 export interface SelectOption {
   id: string;
@@ -20,6 +21,15 @@ export interface CustomColumn {
   position: number;
   is_visible: boolean;
   width: number;
+  jira_field_key?: string;
+}
+
+export interface JiraFieldInfo {
+  id: string;
+  name: string;
+  custom: boolean;
+  type: string;
+  navigable?: boolean;
 }
 
 export interface JiraIssue {
@@ -38,6 +48,7 @@ export interface JiraIssue {
   last_synced_at?: string;
   is_archived_in_jira: boolean;
   custom_values: Record<string, any>;
+  raw_jira_fields?: Record<string, any>;
 }
 
 export interface JiraFilter {

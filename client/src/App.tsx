@@ -315,6 +315,7 @@ export function App() {
         onClose={() => setIsSettingsOpen(false)}
         config={config}
         onRefreshConfig={loadAllData}
+        existingColumns={columns}
       />
     </div>
   );

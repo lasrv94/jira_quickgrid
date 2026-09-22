@@ -11,6 +11,17 @@ logger = logging.getLogger("jira_app")
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
 
+# Auto-migration for newly added columns if table already existed in SQLite
+try:
+    with engine.connect() as conn:
+        col_rows = conn.exec_driver_sql("PRAGMA table_info(custom_columns)").fetchall()
+        col_names = [r[1] for r in col_rows]
+        if "jira_field_key" not in col_names and len(col_names) > 0:
+            conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN jira_field_key VARCHAR(128)")
+            conn.commit()
+except Exception as e:
+    logger.warning(f"Database migration note: {e}")
+
 app = FastAPI(
     title="Jira Airtable-like Web App",
     description="Internal Jira management web app with Airtable interface, persistent local custom fields, and Archivy integration",

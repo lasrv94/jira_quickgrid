@@ -92,3 +92,21 @@ export async function saveArchivyNote(issueKey: string, content: string): Promis
   if (!res.ok) throw new Error('Error al guardar nota de Archivy');
   return res.json();
 }
+
+export async function fetchJiraFields(): Promise<import('../types').JiraFieldInfo[]> {
+  const res = await fetch(`${API_BASE}/jira/fields`);
+  if (!res.ok) throw new Error('Error al obtener campos de Jira');
+  return res.json();
+}
+
+export async function validateJiraFilter(filterId?: string, jql?: string): Promise<{ valid: boolean; name: string; jql: string; matched_issues: number; message: string }> {
+  const res = await fetch(`${API_BASE}/jira/validate-filter?${new URLSearchParams({ filter_id: filterId || '', jql: jql || '' })}`, {
+    method: 'POST'
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Error al validar filtro de Jira');
+  }
+  return res.json();
+}
+

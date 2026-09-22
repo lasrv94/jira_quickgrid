@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
-import type { ColumnType, CustomColumn, SelectOption } from '../types';
+import { useEffect, useState } from 'react';
+import { Database, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { fetchJiraFields } from '../services/api';
+import type { ColumnType, CustomColumn, JiraFieldInfo, SelectOption } from '../types';
 import { COLOR_OPTIONS } from '../utils/colors';
 
 interface Props {
@@ -10,13 +11,25 @@ interface Props {
 }
 
 export const AddColumnModal: React.FC<Props> = ({ isOpen, onClose, onAddColumn }) => {
+  const [columnCategory, setColumnCategory] = useState<'local' | 'jira'>('local');
   const [name, setName] = useState('');
   const [type, setType] = useState<ColumnType>('single_select');
   const [options, setOptions] = useState<SelectOption[]>([
     { id: 'opt-1', label: 'Opción 1', color: 'emerald' },
     { id: 'opt-2', label: 'Opción 2', color: 'amber' },
   ]);
+  const [jiraFieldKey, setJiraFieldKey] = useState('');
+  const [jiraFields, setJiraFields] = useState<JiraFieldInfo[]>([]);
+  const [jiraFieldSearch, setJiraFieldSearch] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchJiraFields()
+        .then((f) => setJiraFields(f))
+        .catch((e) => console.error('Error fetching Jira fields:', e));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -36,19 +49,35 @@ export const AddColumnModal: React.FC<Props> = ({ isOpen, onClose, onAddColumn }
     setOptions(options.filter((_, i) => i !== index));
   };
 
+  const handleSelectJiraField = (field: JiraFieldInfo) => {
+    setJiraFieldKey(field.id);
+    setName(field.name);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     setLoading(true);
     try {
-      await onAddColumn({
-        name: name.trim(),
-        type,
-        options: type === 'single_select' ? options : [],
-        is_visible: true,
-        width: type === 'long_text' ? 240 : 170,
-      });
+      if (columnCategory === 'jira') {
+        await onAddColumn({
+          name: name.trim(),
+          type: 'jira_field',
+          jira_field_key: jiraFieldKey || name.trim().toLowerCase(),
+          is_visible: true,
+          width: 170,
+        });
+      } else {
+        await onAddColumn({
+          name: name.trim(),
+          type,
+          options: type === 'single_select' ? options : [],
+          is_visible: true,
+          width: type === 'long_text' ? 240 : 170,
+        });
+      }
       setName('');
+      setJiraFieldKey('');
       onClose();
     } catch (err) {
       console.error(err);
@@ -57,13 +86,19 @@ export const AddColumnModal: React.FC<Props> = ({ isOpen, onClose, onAddColumn }
     }
   };
 
+  const filteredJiraFields = jiraFields.filter(
+    (f) =>
+      f.name.toLowerCase().includes(jiraFieldSearch.toLowerCase()) ||
+      f.id.toLowerCase().includes(jiraFieldSearch.toLowerCase())
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in duration-150">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-2">
             <span className="text-xl">✨</span>
-            <h3 className="font-semibold text-gray-800 text-base">Crear Nueva Columna Local</h3>
+            <h3 className="font-semibold text-gray-800 text-base">Añadir Columna a la Tabla</h3>
           </div>
           <button
             onClick={onClose}
@@ -73,87 +108,186 @@ export const AddColumnModal: React.FC<Props> = ({ isOpen, onClose, onAddColumn }
           </button>
         </div>
 
+        {/* Tab Selector: Campo Local vs Campo Nativo de Jira */}
+        <div className="flex border-b border-gray-200 bg-gray-50/70 p-1.5 gap-1.5 text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setColumnCategory('local')}
+            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              columnCategory === 'local'
+                ? 'bg-white text-blue-700 shadow-xs font-semibold'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Campo Local (Personalizado)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setColumnCategory('jira')}
+            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              columnCategory === 'jira'
+                ? 'bg-white text-blue-700 shadow-xs font-semibold'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-blue-600" />
+            <span>Campo de Jira (Field Selector)</span>
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-              Nombre de la Columna
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="Ej: Estado Interno, Release Sprint, Prioridad QA"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-              Tipo de Campo
-            </label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as ColumnType)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="single_select">Selección Única (Single Select - Airtable Pills)</option>
-              <option value="text">Texto Corto</option>
-              <option value="long_text">Texto Largo / Notas (Multi-línea)</option>
-              <option value="number">Número</option>
-              <option value="date">Fecha</option>
-              <option value="archivy_link">Vínculo Archivy Wiki (Markdown Docs)</option>
-            </select>
-          </div>
-
-          {type === 'single_select' && (
-            <div className="space-y-2 border-t border-gray-100 pt-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                  Opciones Configurables
+          {columnCategory === 'jira' ? (
+            /* Jira Field Selector Mode */
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                  Selecciona el Campo de Jira a Mostrar
                 </label>
-                <button
-                  type="button"
-                  onClick={handleAddOption}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 hover:underline"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Añadir Opción
-                </button>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar campos (ej. labels, story points, due date)..."
+                    value={jiraFieldSearch}
+                    onChange={(e) => setJiraFieldSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 bg-gray-50/50">
+                  {filteredJiraFields.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-gray-400">
+                      No se encontraron campos de Jira.
+                    </div>
+                  ) : (
+                    filteredJiraFields.map((f) => (
+                      <div
+                        key={f.id}
+                        onClick={() => handleSelectJiraField(f)}
+                        className={`p-2.5 flex items-center justify-between cursor-pointer hover:bg-blue-50 transition-colors text-xs ${
+                          jiraFieldKey === f.id ? 'bg-blue-100/70 text-blue-900 font-semibold' : 'text-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="truncate">{f.name}</span>
+                          <code className="text-[10px] text-gray-400 font-mono">({f.id})</code>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {f.custom && (
+                            <span className="px-1.5 py-0.2 text-[9px] bg-purple-100 text-purple-700 rounded font-semibold">
+                              Custom
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.2 text-[9px] bg-gray-200 text-gray-600 rounded">
+                            {f.type}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
 
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {options.map((opt, idx) => (
-                  <div key={opt.id} className="flex items-center gap-2">
-                    <select
-                      value={opt.color}
-                      onChange={(e) => handleUpdateOption(idx, 'color', e.target.value)}
-                      className="text-xs py-1.5 px-2 rounded border border-gray-200 bg-gray-50 focus:outline-none"
-                    >
-                      {COLOR_OPTIONS.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={opt.label}
-                      onChange={(e) => handleUpdateOption(idx, 'label', e.target.value)}
-                      className="flex-1 px-2.5 py-1 text-xs rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    {options.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveOption(idx)}
-                        className="text-gray-400 hover:text-rose-500 p-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1">
+                  Nombre de la Columna en la Tabla
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nombre de la columna"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                />
               </div>
             </div>
+          ) : (
+            /* Local Field Mode */
+            <>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                  Nombre de la Columna
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Estado Interno, Comentarios QA, Release Target"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+                  Tipo de Campo
+                </label>
+                <select
+                  value={type}
+                  onChange={(e) => setType(e.target.value as ColumnType)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="single_select">Selección Única (Single Select - Airtable Pills)</option>
+                  <option value="text">Texto Corto</option>
+                  <option value="long_text">Texto Largo / Notas (Multi-línea)</option>
+                  <option value="number">Número</option>
+                  <option value="date">Fecha</option>
+                  <option value="archivy_link">Vínculo Archivy Wiki (Markdown Docs)</option>
+                </select>
+              </div>
+
+              {type === 'single_select' && (
+                <div className="space-y-2 border-t border-gray-100 pt-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                      Opciones Configurables
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddOption}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 hover:underline"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Añadir Opción
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {options.map((opt, idx) => (
+                      <div key={opt.id} className="flex items-center gap-2">
+                        <select
+                          value={opt.color}
+                          onChange={(e) => handleUpdateOption(idx, 'color', e.target.value)}
+                          className="text-xs py-1.5 px-2 rounded border border-gray-200 bg-gray-50 focus:outline-none"
+                        >
+                          {COLOR_OPTIONS.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={opt.label}
+                          onChange={(e) => handleUpdateOption(idx, 'label', e.target.value)}
+                          className="flex-1 px-2.5 py-1 text-xs rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        {options.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOption(idx)}
+                            className="text-gray-400 hover:text-rose-500 p-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
@@ -169,7 +303,7 @@ export const AddColumnModal: React.FC<Props> = ({ isOpen, onClose, onAddColumn }
               disabled={loading || !name.trim()}
               className="px-4 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm disabled:opacity-50 transition-colors"
             >
-              {loading ? 'Creando...' : 'Crear Columna'}
+              {loading ? 'Creando...' : columnCategory === 'jira' ? 'Vincular Campo de Jira' : 'Crear Columna'}
             </button>
           </div>
         </form>
