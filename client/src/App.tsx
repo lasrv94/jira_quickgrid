@@ -449,6 +449,7 @@ export function App() {
           onOpenAddColumn={() => setIsAddColumnOpen(true)}
           onDeleteColumn={handleDeleteColumn}
           onUpdateColumnWidth={handleUpdateColumnWidth}
+          onReorderColumns={handleReorderColumns}
           groupBy={groupBy}
           jiraDomain={config?.jira_domain}
           lang={lang}

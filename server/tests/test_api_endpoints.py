@@ -71,18 +71,22 @@ def test_issues_list_and_sync():
     assert len(issues) > 0
     first_key = issues[0]["key"]
 
-    # 3. Update custom value
+    # 3. Update custom value using an active column
+    cols_res = client.get("/api/columns")
+    assert cols_res.status_code == 200
+    target_col_id = cols_res.json()[0]["id"]
+
     custom_val_res = client.post(
         f"/api/issues/{first_key}/custom-values",
-        json={"column_id": "col-estado-interno", "value": "opt-listo"}
+        json={"column_id": target_col_id, "value": "opt-test"}
     )
     assert custom_val_res.status_code == 200
-    assert custom_val_res.json()["value"] == "opt-listo"
+    assert custom_val_res.json()["value"] == "opt-test"
 
     # 4. Verify custom value appears in list_issues
     reloaded_issues = client.get("/api/issues").json()
     matched = next(i for i in reloaded_issues if i["key"] == first_key)
-    assert matched["custom_values"].get("col-estado-interno") == "opt-listo"
+    assert matched["custom_values"].get(target_col_id) == "opt-test"
 
 def test_archivy_notes():
     test_key = "TEST-NOTE-99"

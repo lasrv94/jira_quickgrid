@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  Check,
   ChevronDown,
   ChevronRight,
   Edit2,
   ExternalLink,
+  GripVertical,
   Lock,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { CustomColumn, JiraIssue } from '../types';
 import { getColorClasses } from '../utils/colors';
@@ -31,14 +34,18 @@ const InlineCellEditor: React.FC<InlineCellEditorProps> = ({
 }) => {
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const committedRef = useRef(false);
 
   useEffect(() => {
-    if (inputRef.current) {
+    if (type === 'long_text' && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+    } else if (inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, []);
+  }, [type]);
 
   const handleCommit = () => {
     if (committedRef.current) return;
@@ -46,28 +53,80 @@ const InlineCellEditor: React.FC<InlineCellEditorProps> = ({
     onSave(val);
   };
 
+  const handleCancel = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    onCancel();
+  };
+
   return (
-    <input
-      ref={inputRef}
-      type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
-      value={val}
+    <div
+      className="flex items-center gap-1.5 w-full bg-white p-1 rounded-md border-2 border-blue-500 shadow-lg z-30"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-      onChange={(e) => setVal(e.target.value)}
-      onBlur={handleCommit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleCommit();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          committedRef.current = true;
-          onCancel();
-        }
-      }}
-      className="w-full px-2 py-1 text-xs bg-white text-gray-900 border-2 border-blue-500 rounded shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 z-30"
-    />
+    >
+      {type === 'long_text' ? (
+        <textarea
+          ref={textareaRef}
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              handleCommit();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              handleCancel();
+            }
+          }}
+          rows={2}
+          className="flex-1 px-1.5 py-1 text-xs text-gray-900 focus:outline-none resize-none"
+        />
+      ) : (
+        <input
+          ref={inputRef}
+          type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              handleCommit();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              handleCancel();
+            }
+          }}
+          className="flex-1 px-1.5 py-0.5 text-xs text-gray-900 focus:outline-none min-w-0"
+        />
+      )}
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleCommit();
+          }}
+          title="Guardar"
+          className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs transition-colors"
+        >
+          <Check className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleCancel();
+          }}
+          title="Cancelar"
+          className="p-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 cursor-pointer transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
   );
 };
 
@@ -151,6 +210,7 @@ interface Props {
   onOpenAddColumn: () => void;
   onDeleteColumn: (colId: string) => Promise<void>;
   onUpdateColumnWidth?: (colId: string, width: number) => Promise<void>;
+  onReorderColumns?: (reorderedCols: CustomColumn[]) => Promise<void>;
   groupBy: string | null;
   jiraDomain?: string;
   lang?: Language;
@@ -164,6 +224,7 @@ export const DataGrid: React.FC<Props> = ({
   onOpenAddColumn,
   onDeleteColumn,
   onUpdateColumnWidth,
+  onReorderColumns,
   groupBy,
   jiraDomain,
   lang = 'es',
@@ -303,10 +364,66 @@ export const DataGrid: React.FC<Props> = ({
     }
   };
 
-  const renderJiraFieldValue = (val: any) => {
+  const renderComponentPills = (val: any) => {
+    let list: string[] = [];
+    if (Array.isArray(val)) {
+      list = val
+        .map((item) => {
+          if (!item) return '';
+          if (typeof item === 'object') return item.name || item.value || item.displayName || '';
+          return String(item).trim();
+        })
+        .filter(Boolean);
+    } else if (typeof val === 'object' && val !== null) {
+      if (val.name) list = [val.name];
+      else if (val.value) list = [val.value];
+      else if (val.displayName) list = [val.displayName];
+    } else if (typeof val === 'string' && val.trim()) {
+      list = val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+
+    if (list.length === 0) {
+      return <span className="text-gray-300 italic text-[11px]">-</span>;
+    }
+
+    const pillStyles = [
+      'bg-indigo-50 text-indigo-700 border-indigo-200/80',
+      'bg-blue-50 text-blue-700 border-blue-200/80',
+      'bg-purple-50 text-purple-700 border-purple-200/80',
+      'bg-teal-50 text-teal-700 border-teal-200/80',
+      'bg-amber-50 text-amber-700 border-amber-200/80',
+      'bg-rose-50 text-rose-700 border-rose-200/80',
+      'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+    ];
+
+    return (
+      <div className="flex flex-wrap gap-1.5 items-center py-0.5 max-w-[280px]">
+        {list.map((item, idx) => {
+          const colorClass = pillStyles[idx % pillStyles.length];
+          return (
+            <span
+              key={idx}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border shadow-2xs ${colorClass}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+              <span className="truncate max-w-[150px]">{item}</span>
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderJiraFieldValue = (val: any, fieldKey?: string) => {
     if (val === null || val === undefined || val === '') {
       return <span className="text-gray-300 italic">-</span>;
     }
+
+    // Components or Labels array rendering
+    if (fieldKey && (fieldKey.toLowerCase().includes('component') || fieldKey.toLowerCase().includes('label'))) {
+      return renderComponentPills(val);
+    }
+
     if (typeof val === 'boolean') {
       return (
         <span
@@ -318,28 +435,30 @@ export const DataGrid: React.FC<Props> = ({
         </span>
       );
     }
-    if (Array.isArray(val)) {
-      if (val.length === 0) return <span className="text-gray-300 italic">Vacío</span>;
+
+    // Project object from Jira
+    if (typeof val === 'object' && val !== null && (val.projectTypeKey || val.key)) {
       return (
-        <div className="flex flex-wrap gap-1 max-w-[240px]">
-          {val.map((item, idx) => {
-            const text =
-              typeof item === 'object' && item !== null
-                ? item.name || item.value || item.displayName || JSON.stringify(item)
-                : String(item);
-            return (
-              <span
-                key={idx}
-                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 truncate max-w-[120px]"
-                title={text}
-              >
-                {text}
-              </span>
-            );
-          })}
+        <div className="flex items-center gap-1.5">
+          {val.avatarUrls?.['16x16'] || val.avatarUrls?.['24x24'] ? (
+            <img
+              src={val.avatarUrls['16x16'] || val.avatarUrls['24x24']}
+              alt={val.name || val.key}
+              className="w-4 h-4 rounded-xs shrink-0"
+            />
+          ) : null}
+          <span className="text-xs font-medium text-gray-800 truncate" title={`${val.name || ''} (${val.key || ''})`}>
+            {val.name || val.key} {val.key && val.name ? <span className="text-gray-400 text-[10px]">({val.key})</span> : null}
+          </span>
         </div>
       );
     }
+
+    if (Array.isArray(val)) {
+      if (val.length === 0) return <span className="text-gray-300 italic">-</span>;
+      return renderComponentPills(val);
+    }
+
     if (typeof val === 'object') {
       if (val.displayName) {
         return (
@@ -377,16 +496,58 @@ export const DataGrid: React.FC<Props> = ({
       }
       return <span className="text-xs text-gray-500 font-mono truncate">{JSON.stringify(val)}</span>;
     }
+
     return (
-      <span className="text-xs text-gray-800 truncate block max-w-[200px]" title={String(val)}>
+      <span className="text-xs text-gray-800 truncate block max-w-[240px]" title={String(val)}>
         {String(val)}
       </span>
     );
   };
 
+  // Header column drag & drop reordering state
+  const [draggingColId, setDraggingColId] = useState<string | null>(null);
+  const [dragOverColId, setDragOverColId] = useState<string | null>(null);
+
+  const handleColumnDrop = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    const currentCols = [...columns];
+    const sourceIdx = currentCols.findIndex((c) => c.id === sourceId);
+    const targetIdx = currentCols.findIndex((c) => c.id === targetId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const [removed] = currentCols.splice(sourceIdx, 1);
+    currentCols.splice(targetIdx, 0, removed);
+
+    const reordered = currentCols.map((col, idx) => ({ ...col, position: idx }));
+    if (onReorderColumns) {
+      onReorderColumns(reordered);
+    }
+  };
+
+  // Compute total table width to guarantee horizontal scrollbar
+  const totalTableWidth = useMemo(() => {
+    const baseWidths =
+      40 + // row index #
+      (columnWidths.key || 120) +
+      (columnWidths.summary || 340) +
+      (columnWidths.status || 135) +
+      (columnWidths.priority || 120) +
+      (columnWidths.assignee || 150);
+
+    const customTotal = visibleCustomColumns.reduce(
+      (sum, col) => sum + (columnWidths[col.id] || col.width || 160),
+      0
+    );
+
+    return baseWidths + customTotal + 120; // 120px buffer for add column button and comfortable margin
+  }, [columnWidths, visibleCustomColumns]);
+
   return (
-    <div className="flex-1 overflow-auto bg-white relative min-h-[450px] pb-64">
-      <table className="w-full text-left border-collapse text-xs mb-36">
+    <div className="flex-1 overflow-x-auto overflow-y-auto bg-white relative min-h-[500px] pb-64">
+      <table
+        style={{ minWidth: `${totalTableWidth}px` }}
+        className="min-w-max text-left border-collapse text-xs mb-36"
+      >
         {/* Table Header */}
         <thead className="bg-[#f8f9fb] sticky top-0 z-20 border-b border-gray-200 text-gray-600 font-semibold uppercase text-[11px] tracking-wider select-none">
           <tr>
@@ -478,32 +639,76 @@ export const DataGrid: React.FC<Props> = ({
             {/* Custom Local & Jira Columns */}
             {visibleCustomColumns.map((col) => {
               const currentW = columnWidths[col.id] || col.width || 160;
+              const isJira = col.type === 'jira_field' || !!col.jira_field_key;
+              const isDraggingThis = draggingColId === col.id;
+              const isOverThis = dragOverColId === col.id;
+
               return (
                 <th
                   key={col.id}
-                  style={{ width: currentW, minWidth: 80 }}
-                  className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] group relative select-none"
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', col.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggingColId(col.id);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dragOverColId !== col.id) {
+                      setDragOverColId(col.id);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverColId === col.id) setDragOverColId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const sourceId = e.dataTransfer.getData('text/plain') || draggingColId;
+                    setDraggingColId(null);
+                    setDragOverColId(null);
+                    if (sourceId && sourceId !== col.id) {
+                      handleColumnDrop(sourceId, col.id);
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setDraggingColId(null);
+                    setDragOverColId(null);
+                  }}
+                  style={{ width: currentW, minWidth: 90 }}
+                  className={`px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] group relative select-none cursor-grab active:cursor-grabbing transition-all ${
+                    isOverThis ? 'border-l-4 border-l-blue-600 bg-blue-50/80 shadow-inner' : ''
+                  } ${isDraggingThis ? 'opacity-40' : ''}`}
+                  title={`${col.name} (Arrastrar para mover posición)`}
                 >
                   <div className="flex items-center justify-between gap-1 pr-1">
                     <div className="flex items-center gap-1.5 truncate">
-                      {col.type === 'jira_field' || col.jira_field_key ? (
-                        <span className="px-1 py-0.2 text-[9px] bg-blue-100 text-blue-800 font-mono rounded font-bold">JIRA</span>
+                      <GripVertical className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500 shrink-0" />
+                      {isJira ? (
+                        <span className="px-1 py-0.2 text-[9px] bg-blue-100 text-blue-800 font-mono rounded font-bold">
+                          JIRA
+                        </span>
                       ) : (
-                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
                       )}
-                      <span className="font-bold text-gray-800 truncate" title={col.name}>{col.name}</span>
+                      <span className="font-bold text-gray-800 truncate" title={col.name}>
+                        {col.name}
+                      </span>
                     </div>
-                    <button
-                      onClick={() => {
-                        if (window.confirm(t.remove_column_confirm)) {
-                          onDeleteColumn(col.id);
-                        }
-                      }}
-                      title={t.remove_column}
-                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 p-0.5 rounded transition-opacity cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                    {!isJira && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(t.remove_column_confirm)) {
+                            onDeleteColumn(col.id);
+                          }
+                        }}
+                        title={t.remove_column}
+                        className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                   {/* Column Resize Handle */}
                   <div
@@ -662,7 +867,7 @@ export const DataGrid: React.FC<Props> = ({
                           );
                         }
 
-                        // 2. Single Select Cell
+                        // 2. Single Select Cell (Local Custom)
                         if (col.type === 'single_select') {
                           const currentOpt = col.options?.find((o) => o.id === rawCustomValue);
                           const isDropdownOpen =
@@ -672,33 +877,45 @@ export const DataGrid: React.FC<Props> = ({
                             <td
                               key={col.id}
                               className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40"
+                              title="Clic en lápiz o doble clic para seleccionar"
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
                                 setActiveDropdown({ issueKey: issue.key, colId: col.id });
                               }}
-                              title={t.dblclick_to_edit}
                             >
-                              <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveDropdown(isDropdownOpen ? null : { issueKey: issue.key, colId: col.id });
-                                }}
-                                className="cursor-pointer inline-flex items-center gap-1.5 py-0.5"
-                              >
-                                {currentOpt ? (
-                                  <span
-                                    className={`px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs ${getColorClasses(
-                                      currentOpt.color
-                                    )}`}
-                                  >
-                                    {currentOpt.label}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300 text-xs hover:text-blue-600 italic">
-                                    {t.col_select}
-                                  </span>
-                                )}
-                                <Edit2 className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-0.5 shrink-0" />
+                              <div className="flex items-center justify-between min-h-[22px] gap-1.5">
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveDropdown(isDropdownOpen ? null : { issueKey: issue.key, colId: col.id });
+                                  }}
+                                  className="cursor-pointer inline-flex items-center gap-1.5 py-0.5 truncate flex-1"
+                                >
+                                  {currentOpt ? (
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs ${getColorClasses(
+                                        currentOpt.color
+                                      )}`}
+                                    >
+                                      {currentOpt.label}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs hover:text-blue-600 italic">
+                                      {t.col_select}
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveDropdown({ issueKey: issue.key, colId: col.id });
+                                  }}
+                                  className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 opacity-60 group-hover/cell:opacity-100 transition-opacity cursor-pointer shrink-0"
+                                  title="Seleccionar opción"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                                </button>
                               </div>
 
                               {isDropdownOpen && (
@@ -713,77 +930,25 @@ export const DataGrid: React.FC<Props> = ({
                           );
                         }
 
-                        // 3. Jira Field Selectors Columns (with local editable override support!)
+                        // 3. Jira Field Selectors Columns (STRICTLY READ-ONLY)
                         if (col.type === 'jira_field' || col.jira_field_key) {
                           const fieldKey = col.jira_field_key || col.id;
                           const jiraRawVal = issue.raw_jira_fields?.[fieldKey];
-                          const hasLocalOverride =
-                            rawCustomValue !== undefined && rawCustomValue !== null && rawCustomValue !== '';
-                          const currentDisplayStr = hasLocalOverride
-                            ? String(rawCustomValue)
-                            : typeof jiraRawVal === 'object'
-                            ? JSON.stringify(jiraRawVal)
-                            : jiraRawVal !== null && jiraRawVal !== undefined
-                            ? String(jiraRawVal)
-                            : '';
+                          const isComponentField =
+                            fieldKey.toLowerCase().includes('component') ||
+                            col.name.toLowerCase().includes('component');
 
                           return (
                             <td
                               key={col.id}
-                              className="px-3 py-1.5 border-r border-gray-100 max-w-[240px] cursor-pointer relative group/cell hover:bg-blue-50/50 transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingCell({
-                                  issueKey: issue.key,
-                                  colId: col.id,
-                                  initialVal: currentDisplayStr,
-                                });
-                              }}
-                              onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                setEditingCell({
-                                  issueKey: issue.key,
-                                  colId: col.id,
-                                  initialVal: currentDisplayStr,
-                                });
-                              }}
-                              title={`${t.dblclick_to_edit} (Jira: ${fieldKey})`}
+                              className="px-3 py-1.5 border-r border-gray-100 max-w-[280px] bg-slate-50/20 text-gray-800"
+                              title={`Jira (${fieldKey}) - Solo lectura`}
                             >
-                              {isCurrentlyEditing ? (
-                                <InlineCellEditor
-                                  initialValue={currentDisplayStr}
-                                  onSave={(newVal) => {
-                                    onUpdateCustomValue(issue.key, col.id, newVal);
-                                    setEditingCell(null);
-                                  }}
-                                  onCancel={() => setEditingCell(null)}
-                                />
-                              ) : (
-                                <div className="flex items-center justify-between min-h-[20px]">
-                                  <div className="truncate">
-                                    {hasLocalOverride ? (
-                                      <span className="text-blue-900 font-semibold">{String(rawCustomValue)}</span>
-                                    ) : (
-                                      renderJiraFieldValue(jiraRawVal)
-                                    )}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingCell({
-                                        issueKey: issue.key,
-                                        colId: col.id,
-                                        initialVal: currentDisplayStr,
-                                      });
-                                    }}
-                                    className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0 cursor-pointer"
-                                    title="Editar campo"
-                                  >
-                                    <Edit2 className="w-3 h-3 text-blue-500" />
-                                  </button>
-                                </div>
-                              )}
+                              <div className="truncate">
+                                {isComponentField
+                                  ? renderComponentPills(jiraRawVal)
+                                  : renderJiraFieldValue(jiraRawVal, fieldKey)}
+                              </div>
                             </td>
                           );
                         }
@@ -795,15 +960,8 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
-                            className="px-3 py-1.5 border-r border-gray-100 cursor-pointer relative group/cell hover:bg-blue-50/50 transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingCell({
-                                issueKey: issue.key,
-                                colId: col.id,
-                                initialVal: displayVal,
-                              });
-                            }}
+                            className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40"
+                            title="Clic en lápiz o doble clic para editar"
                             onDoubleClick={(e) => {
                               e.stopPropagation();
                               setEditingCell({
@@ -812,7 +970,6 @@ export const DataGrid: React.FC<Props> = ({
                                 initialVal: displayVal,
                               });
                             }}
-                            title={t.dblclick_to_edit}
                           >
                             {isCurrentlyEditing ? (
                               <InlineCellEditor
@@ -825,25 +982,24 @@ export const DataGrid: React.FC<Props> = ({
                                 onCancel={() => setEditingCell(null)}
                               />
                             ) : (
-                              <div className="flex items-center justify-between min-h-[20px]">
-                                <span className="truncate text-gray-800">
+                              <div className="flex items-center justify-between min-h-[22px] gap-1.5">
+                                <span
+                                  className="truncate text-gray-800 cursor-pointer flex-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCell({
+                                      issueKey: issue.key,
+                                      colId: col.id,
+                                      initialVal: displayVal,
+                                    });
+                                  }}
+                                >
                                   {displayVal !== '' ? (
                                     <span>{displayVal}</span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setEditingCell({
-                                          issueKey: issue.key,
-                                          colId: col.id,
-                                          initialVal: '',
-                                        });
-                                      }}
-                                      className="text-gray-300 italic hover:text-blue-600 transition-colors cursor-pointer"
-                                    >
+                                    <span className="text-gray-400 italic text-xs hover:text-blue-600">
                                       {t.col_empty}
-                                    </button>
+                                    </span>
                                   )}
                                 </span>
                                 <button
@@ -856,10 +1012,10 @@ export const DataGrid: React.FC<Props> = ({
                                       initialVal: displayVal,
                                     });
                                   }}
-                                  className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0 cursor-pointer"
+                                  className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 opacity-60 group-hover/cell:opacity-100 transition-opacity cursor-pointer shrink-0"
                                   title="Editar campo"
                                 >
-                                  <Edit2 className="w-3 h-3 text-blue-500" />
+                                  <Edit2 className="w-3.5 h-3.5 text-blue-600" />
                                 </button>
                               </div>
                             )}

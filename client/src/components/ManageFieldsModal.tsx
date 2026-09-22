@@ -6,6 +6,7 @@ import {
   Edit2,
   Eye,
   EyeOff,
+  GripVertical,
   Plus,
   Search,
   SlidersHorizontal,
@@ -44,6 +45,8 @@ export const ManageFieldsModal: React.FC<Props> = ({
   const [editingColId, setEditingColId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [savingCol, setSavingCol] = useState(false);
+  const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
+  const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -80,6 +83,20 @@ export const ManageFieldsModal: React.FC<Props> = ({
     updated[newIdx] = temp;
 
     // Update positions
+    const reordered = updated.map((c, i) => ({ ...c, position: i }));
+    await onReorderColumns(reordered);
+  };
+
+  const handleRowDrop = async (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    const updated = [...columns];
+    const sourceIdx = updated.findIndex((c) => c.id === sourceId);
+    const targetIdx = updated.findIndex((c) => c.id === targetId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const [removed] = updated.splice(sourceIdx, 1);
+    updated.splice(targetIdx, 0, removed);
+
     const reordered = updated.map((c, i) => ({ ...c, position: i }));
     await onReorderColumns(reordered);
   };
@@ -207,17 +224,59 @@ export const ManageFieldsModal: React.FC<Props> = ({
               const isLast = idx === filteredColumns.length - 1;
               const isEditingThis = editingColId === col.id;
 
+              const isDraggingThis = draggingRowId === col.id;
+              const isOverThis = dragOverRowId === col.id;
+
               return (
                 <div
                   key={col.id}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', col.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggingRowId(col.id);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dragOverRowId !== col.id) {
+                      setDragOverRowId(col.id);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverRowId === col.id) setDragOverRowId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const sourceId = e.dataTransfer.getData('text/plain') || draggingRowId;
+                    setDraggingRowId(null);
+                    setDragOverRowId(null);
+                    if (sourceId && sourceId !== col.id) {
+                      handleRowDrop(sourceId, col.id);
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setDraggingRowId(null);
+                    setDragOverRowId(null);
+                  }}
                   className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
+                    isOverThis ? 'border-t-4 border-t-blue-600 bg-blue-50/80 shadow-md' : ''
+                  } ${isDraggingThis ? 'opacity-40' : ''} ${
                     col.is_visible
                       ? 'bg-white border-gray-200 shadow-2xs hover:border-blue-300'
                       : 'bg-gray-50/70 border-gray-100 opacity-60 hover:opacity-100'
                   }`}
                 >
-                  {/* Left: Reorder arrows, Visibility toggle & Name */}
+                  {/* Left: Drag handle, Reorder arrows, Visibility toggle & Name */}
                   <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+                    {/* Drag Grip Handle */}
+                    <div
+                      className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-600 rounded shrink-0"
+                      title={isEs ? 'Arrastrar para reordenar' : 'Drag to reorder'}
+                    >
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </div>
+
                     {/* Reorder Arrows */}
                     <div className="flex flex-col gap-0.5 shrink-0">
                       <button
