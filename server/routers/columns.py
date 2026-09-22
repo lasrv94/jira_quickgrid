@@ -1,6 +1,7 @@
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db
 from models import CustomColumn, CustomColumnCreate, CustomColumnOut, CustomColumnUpdate
@@ -114,3 +115,15 @@ def delete_column(column_id: str, db: Session = Depends(get_db)):
     db.delete(col)
     db.commit()
     return {"status": "success", "deleted_id": column_id}
+
+class ReorderColumnsRequest(BaseModel):
+    column_ids: List[str]
+
+@router.post("/reorder", response_model=List[CustomColumnOut])
+def reorder_columns(data: ReorderColumnsRequest, db: Session = Depends(get_db)):
+    for idx, col_id in enumerate(data.column_ids):
+        col = db.query(CustomColumn).filter(CustomColumn.id == col_id).first()
+        if col:
+            col.position = idx
+    db.commit()
+    return db.query(CustomColumn).order_by(CustomColumn.position.asc()).all()

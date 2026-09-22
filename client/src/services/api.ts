@@ -46,6 +46,16 @@ export async function deleteColumn(columnId: string): Promise<void> {
   if (!res.ok) throw new Error('Error al eliminar columna');
 }
 
+export async function reorderColumns(columnIds: string[]): Promise<CustomColumn[]> {
+  const res = await fetch(`${API_BASE}/columns/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ column_ids: columnIds }),
+  });
+  if (!res.ok) throw new Error('Error al reordenar columnas');
+  return res.json();
+}
+
 export async function setCustomValue(issueKey: string, columnId: string, value: any): Promise<void> {
   const res = await fetch(`${API_BASE}/issues/${encodeURIComponent(issueKey)}/custom-values`, {
     method: 'POST',

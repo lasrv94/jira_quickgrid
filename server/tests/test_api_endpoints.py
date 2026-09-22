@@ -45,7 +45,15 @@ def test_columns_crud():
     assert update_res.status_code == 200
     assert update_res.json()["name"] == "QA Signoff Final"
 
-    # 4. Delete column
+    # 4. Reorder columns
+    reorder_res = client.post("/api/columns/reorder", json={"column_ids": [col_id, "col-estado-interno"]})
+    assert reorder_res.status_code == 200
+    reordered_list = reorder_res.json()
+    first_col = next((c for c in reordered_list if c["id"] == col_id), None)
+    assert first_col is not None
+    assert first_col["position"] == 0
+
+    # 5. Delete column
     del_res = client.delete(f"/api/columns/{col_id}")
     assert del_res.status_code == 200
 

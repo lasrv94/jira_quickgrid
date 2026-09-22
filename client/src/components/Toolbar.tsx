@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import type { CustomColumn, JiraFilter } from '../types';
@@ -25,6 +26,7 @@ interface Props {
   lastSync?: string;
   columns: CustomColumn[];
   onToggleColumnVisibility: (colId: string) => void;
+  onOpenManageFields?: () => void;
   onOpenAddColumn: () => void;
   onOpenSettings: () => void;
   onExportPdf?: () => void;
@@ -47,6 +49,7 @@ export const Toolbar: React.FC<Props> = ({
   lastSync,
   columns,
   onToggleColumnVisibility,
+  onOpenManageFields,
   onOpenAddColumn,
   onOpenSettings,
   onExportPdf,
@@ -311,6 +314,21 @@ export const Toolbar: React.FC<Props> = ({
             </div>
           )}
         </div>
+
+        {/* Manage Fields Button (Airtable-style) */}
+        {onOpenManageFields && (
+          <button
+            onClick={onOpenManageFields}
+            title={lang === 'es' ? 'Gestionar, Ocultar y Reacomodar Campos' : 'Manage, Hide & Reorder Fields'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 transition-colors shadow-2xs"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
+            <span>{t.manage_fields_btn}</span>
+            <span className="text-[10px] font-bold bg-indigo-200/80 text-indigo-800 rounded-full px-1.5 py-0.2">
+              {columns.filter((c) => c.is_visible).length}/{columns.length}
+            </span>
+          </button>
+        )}
 
         {/* Add Column Button */}
         <button

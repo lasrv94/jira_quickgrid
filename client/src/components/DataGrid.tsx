@@ -385,8 +385,8 @@ export const DataGrid: React.FC<Props> = ({
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-white relative">
-      <table className="w-full text-left border-collapse text-xs">
+    <div className="flex-1 overflow-auto bg-white relative min-h-[450px] pb-64">
+      <table className="w-full text-left border-collapse text-xs mb-36">
         {/* Table Header */}
         <thead className="bg-[#f8f9fb] sticky top-0 z-20 border-b border-gray-200 text-gray-600 font-semibold uppercase text-[11px] tracking-wider select-none">
           <tr>
@@ -730,7 +730,15 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              className="px-3 py-1.5 border-r border-gray-100 max-w-[240px] cursor-pointer relative group/cell hover:bg-blue-50/40 transition-colors"
+                              className="px-3 py-1.5 border-r border-gray-100 max-w-[240px] cursor-pointer relative group/cell hover:bg-blue-50/50 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCell({
+                                  issueKey: issue.key,
+                                  colId: col.id,
+                                  initialVal: currentDisplayStr,
+                                });
+                              }}
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
                                 setEditingCell({
@@ -754,12 +762,26 @@ export const DataGrid: React.FC<Props> = ({
                                 <div className="flex items-center justify-between min-h-[20px]">
                                   <div className="truncate">
                                     {hasLocalOverride ? (
-                                      <span className="text-blue-900 font-medium">{String(rawCustomValue)}</span>
+                                      <span className="text-blue-900 font-semibold">{String(rawCustomValue)}</span>
                                     ) : (
                                       renderJiraFieldValue(jiraRawVal)
                                     )}
                                   </div>
-                                  <Edit2 className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0" />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingCell({
+                                        issueKey: issue.key,
+                                        colId: col.id,
+                                        initialVal: currentDisplayStr,
+                                      });
+                                    }}
+                                    className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0 cursor-pointer"
+                                    title="Editar campo"
+                                  >
+                                    <Edit2 className="w-3 h-3 text-blue-500" />
+                                  </button>
                                 </div>
                               )}
                             </td>
@@ -773,7 +795,15 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
-                            className="px-3 py-1.5 border-r border-gray-100 cursor-pointer relative group/cell hover:bg-blue-50/40 transition-colors"
+                            className="px-3 py-1.5 border-r border-gray-100 cursor-pointer relative group/cell hover:bg-blue-50/50 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingCell({
+                                issueKey: issue.key,
+                                colId: col.id,
+                                initialVal: displayVal,
+                              });
+                            }}
                             onDoubleClick={(e) => {
                               e.stopPropagation();
                               setEditingCell({
@@ -816,7 +846,21 @@ export const DataGrid: React.FC<Props> = ({
                                     </button>
                                   )}
                                 </span>
-                                <Edit2 className="w-2.5 h-2.5 text-gray-300 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0" />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingCell({
+                                      issueKey: issue.key,
+                                      colId: col.id,
+                                      initialVal: displayVal,
+                                    });
+                                  }}
+                                  className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100 opacity-0 group-hover/cell:opacity-100 transition-opacity ml-1 shrink-0 cursor-pointer"
+                                  title="Editar campo"
+                                >
+                                  <Edit2 className="w-3 h-3 text-blue-500" />
+                                </button>
                               </div>
                             )}
                           </td>

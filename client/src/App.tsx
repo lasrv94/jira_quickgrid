@@ -4,6 +4,7 @@ import { AddColumnModal } from './components/AddColumnModal';
 import { ArchivyDrawer } from './components/ArchivyDrawer';
 import { CreateViewModal } from './components/CreateViewModal';
 import { DataGrid } from './components/DataGrid';
+import { ManageFieldsModal } from './components/ManageFieldsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Toolbar } from './components/Toolbar';
 import { ViewTabs } from './components/ViewTabs';
@@ -17,6 +18,7 @@ import {
   fetchFilters,
   fetchIssues,
   fetchViews,
+  reorderColumns,
   setCustomValue,
   syncIssues,
   updateColumn,
@@ -53,6 +55,7 @@ export function App() {
 
   // Modals & Drawers
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [isManageFieldsOpen, setIsManageFieldsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeArchivyIssue, setActiveArchivyIssue] = useState<JiraIssue | null>(null);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
@@ -214,6 +217,27 @@ export function App() {
       await updateColumn(columnId, { width });
     } catch (err) {
       console.error('Error saving column width:', err);
+    }
+  };
+
+  const handleReorderColumns = async (reorderedCols: CustomColumn[]) => {
+    setColumns(reorderedCols);
+    try {
+      await reorderColumns(reorderedCols.map((c) => c.id));
+    } catch (err) {
+      console.error('Error saving column reorder:', err);
+    }
+  };
+
+  const handleUpdateColumn = async (columnId: string, data: Partial<CustomColumn>) => {
+    setColumns((prev) =>
+      prev.map((c) => (c.id === columnId ? { ...c, ...data } : c))
+    );
+    try {
+      await updateColumn(columnId, data);
+    } catch (err) {
+      console.error('Error updating column:', err);
+      throw err;
     }
   };
 
@@ -393,6 +417,7 @@ export function App() {
         lastSync={config?.last_sync}
         columns={columns}
         onToggleColumnVisibility={handleToggleColumnVisibility}
+        onOpenManageFields={() => setIsManageFieldsOpen(true)}
         onOpenAddColumn={() => setIsAddColumnOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onExportPdf={handleExportPdf}
@@ -434,6 +459,22 @@ export function App() {
       <ArchivyDrawer
         issue={activeArchivyIssue}
         onClose={() => setActiveArchivyIssue(null)}
+      />
+
+      {/* Manage Fields Modal (Airtable-style) */}
+      <ManageFieldsModal
+        isOpen={isManageFieldsOpen}
+        onClose={() => setIsManageFieldsOpen(false)}
+        columns={columns}
+        onToggleVisibility={handleToggleColumnVisibility}
+        onReorderColumns={handleReorderColumns}
+        onUpdateColumn={handleUpdateColumn}
+        onDeleteColumn={handleDeleteColumn}
+        onOpenAddColumn={() => {
+          setIsManageFieldsOpen(false);
+          setIsAddColumnOpen(true);
+        }}
+        lang={lang}
       />
 
       {/* Add Column Modal */}

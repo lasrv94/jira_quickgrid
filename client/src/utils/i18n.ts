@@ -49,6 +49,9 @@ export const translations = {
     group_assignee: 'Asignado',
     columns_btn: 'Columnas',
     columns_visibility: 'Visibilidad de Columnas',
+    manage_fields_btn: 'Gestionar Campos',
+    manage_fields_title: 'Gestionar y Reacomodar Campos',
+    manage_fields_desc: 'Muestra, oculta, reordena y edita las columnas estilo Airtable',
     add_column_btn: 'Añadir Campo',
     settings_tooltip: 'Configuración de Jira, Filtros y Field Selectors',
 
@@ -165,6 +168,9 @@ export const translations = {
     group_assignee: 'Assignee',
     columns_btn: 'Columns',
     columns_visibility: 'Column Visibility',
+    manage_fields_btn: 'Manage Fields',
+    manage_fields_title: 'Manage & Reorder Fields',
+    manage_fields_desc: 'Show, hide, reorder and edit columns Airtable-style',
     add_column_btn: 'Add Field',
     settings_tooltip: 'Jira Settings, Filters & Field Selectors',
 
