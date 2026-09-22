@@ -54,6 +54,17 @@ Open **Settings** and choose a connection mode:
 
 Choose a Jira filter and sync to load your issues. Jira Server/Data Center and custom Jira hostnames are not supported.
 
+## Using Jira QuickGrid at work
+
+Jira QuickGrid can be suitable for individual use within a company when your organization permits the tool and its handling of Jira data. Its design reduces several common risks:
+
+- **Read-only Jira access:** the app reads issues without changing Jira tickets, workflows, or project settings. Local tracking fields do not modify your company's Jira configuration.
+- **Local storage:** downloaded issues, custom values, and notes are stored on your workstation rather than in an additional hosted service. Jira authentication and API requests still contact Atlassian, and avatars can load from external services.
+- **Browser protections:** the API restricts browser origins and local access, validates Jira Cloud domains before sending credentials, and protects OAuth callbacks against replay.
+- **Separate local data:** syncing Jira preserves your local custom values and notes.
+
+These controls support workplace use; they do not guarantee safety for every person or company. Use a trusted, company-approved workstation, follow your IT/security team's requirements, and protect the unencrypted local credentials and backups. This is a single-user local tool, not a shared enterprise service. See the security details below before connecting company data.
+
 ## Your data and security
 
 This app is intended for **one user on a trusted local workstation**. Keep both servers local; it has no application login or shared-user access controls and must not be exposed to a network or public tunnel.
