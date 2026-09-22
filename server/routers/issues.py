@@ -25,14 +25,17 @@ async def sync_jira_issues(filter_id: Optional[str] = None, db: Session = Depend
     }
 
 @router.get("/issues", response_model=List[IssueOut])
-def list_issues(db: Session = Depends(get_db)):
+def list_issues(include_archived: bool = Query(False), db: Session = Depends(get_db)):
     # Auto-seed mock issues if database is empty so app works immediately
     count = db.query(JiraIssue).count()
     if count == 0:
         import asyncio
         asyncio.run(JiraService.sync_issues_from_jira(db))
 
-    issues = db.query(JiraIssue).order_by(JiraIssue.jira_updated_at.desc()).all()
+    query = db.query(JiraIssue)
+    if not include_archived:
+        query = query.filter(JiraIssue.is_archived_in_jira == False)
+    issues = query.order_by(JiraIssue.jira_updated_at.desc()).all()
     results = []
     for issue in issues:
         vals = db.query(IssueCustomValue).filter(IssueCustomValue.issue_key == issue.key).all()
@@ -53,10 +56,19 @@ def list_issues(db: Session = Depends(get_db)):
                 jira_updated_at=issue.jira_updated_at,
                 last_synced_at=issue.last_synced_at,
                 is_archived_in_jira=issue.is_archived_in_jira,
-                custom_values=custom_dict
+                custom_values=custom_dict,
+                raw_jira_fields=issue.raw_jira_fields
             )
         )
     return results
+
+@router.get("/jira/fields")
+async def list_jira_fields(db: Session = Depends(get_db)):
+    return await JiraService.get_jira_fields(db)
+
+@router.post("/jira/validate-filter")
+async def validate_filter(filter_id: Optional[str] = None, jql: Optional[str] = None, db: Session = Depends(get_db)):
+    return await JiraService.validate_filter_or_jql(db, filter_id=filter_id, jql=jql)
 
 @router.post("/issues/{key}/custom-values")
 def update_issue_custom_value(key: str, data: SetCustomValueRequest, db: Session = Depends(get_db)):

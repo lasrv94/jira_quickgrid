@@ -52,6 +52,7 @@ class CustomColumn(Base):
     position = Column(Integer, default=0)
     is_visible = Column(Boolean, default=True)
     width = Column(Integer, default=160)
+    jira_field_key = Column(String(128), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     values = relationship("IssueCustomValue", back_populates="column", cascade="all, delete-orphan")
@@ -93,6 +94,21 @@ class SavedConfig(Base):
     archivy_dir = Column(Text, nullable=True)
 
 
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4())[:8])
+    name = Column(String(128), nullable=False)
+    group_by = Column(String(64), nullable=True)
+    sort_field = Column(String(64), nullable=True)
+    sort_direction = Column(String(16), default="asc")
+    search_query = Column(String(256), default="")
+    filter_id = Column(String(128), nullable=True)
+    visible_columns = Column(JSON, nullable=True)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
 # ----------------- Pydantic Schemas -----------------
 
 class SelectOption(BaseModel):
@@ -102,11 +118,12 @@ class SelectOption(BaseModel):
 
 class CustomColumnCreate(BaseModel):
     name: str
-    type: str  # single_select, text, long_text, date, number, archivy_link
+    type: str  # single_select, text, long_text, date, number, archivy_link, jira_field
     options: Optional[List[Dict[str, Any]]] = None
     position: Optional[int] = 0
     is_visible: Optional[bool] = True
     width: Optional[int] = 160
+    jira_field_key: Optional[str] = None
 
 class CustomColumnUpdate(BaseModel):
     name: Optional[str] = None
@@ -115,6 +132,7 @@ class CustomColumnUpdate(BaseModel):
     position: Optional[int] = None
     is_visible: Optional[bool] = None
     width: Optional[int] = None
+    jira_field_key: Optional[str] = None
 
 class CustomColumnOut(BaseModel):
     id: str
@@ -124,6 +142,7 @@ class CustomColumnOut(BaseModel):
     position: int
     is_visible: bool
     width: int
+    jira_field_key: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -147,6 +166,7 @@ class IssueOut(BaseModel):
     last_synced_at: Optional[datetime] = None
     is_archived_in_jira: bool = False
     custom_values: Dict[str, Any] = {}
+    raw_jira_fields: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 
@@ -182,3 +202,38 @@ class ConfigUpdateRequest(BaseModel):
     jira_client_id: Optional[str] = None
     jira_client_secret: Optional[str] = None
     archivy_dir: Optional[str] = None
+
+class SavedViewCreate(BaseModel):
+    name: str
+    group_by: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_direction: Optional[str] = "asc"
+    search_query: Optional[str] = ""
+    filter_id: Optional[str] = None
+    visible_columns: Optional[List[str]] = None
+    is_default: Optional[bool] = False
+
+class SavedViewUpdate(BaseModel):
+    name: Optional[str] = None
+    group_by: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_direction: Optional[str] = None
+    search_query: Optional[str] = None
+    filter_id: Optional[str] = None
+    visible_columns: Optional[List[str]] = None
+    is_default: Optional[bool] = None
+
+class SavedViewOut(BaseModel):
+    id: str
+    name: str
+    group_by: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_direction: str = "asc"
+    search_query: str = ""
+    filter_id: Optional[str] = None
+    visible_columns: Optional[List[str]] = None
+    is_default: bool = False
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+

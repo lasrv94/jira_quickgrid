@@ -7,12 +7,13 @@ Aplicación web interna para la gestión visual, moderna y ligera de tickets de 
 ## 🌟 Características Principales
 
 1. **Interfaz estilo Airtable Data Grid:**
-   * **Columnas fijas (Sticky columns):** `Key` y `Summary` quedan fijas a la izquierda para una navegación fluida con scroll horizontal.
-   * **Distinción visual clara:** Indicador de sólo lectura con candado para campos nativos de Jira.
+   * **Columnas fijas (Sticky columns):** `Key` y `Summary` quedan fijas a la izquierda para una navegación fluida con scroll horizontal completo y redimensionamiento dinámico de columnas (drag-to-resize).
+   * **Distinción visual clara:** Indicador de sólo lectura con candado para campos nativos de Jira. Por regla del sistema, los campos nativos de Jira son estrictamente de solo lectura y no se pueden editar en la interfaz.
+   * **Píldoras y Componentes:** Soporte enriquecido para arrays nativos de Jira (Labels, Components) con diseño de múltiples píldoras de colores.
+   * **Reordenamiento drag & drop:** Permite arrastrar columnas desde el encabezado o reorganizarlas en el gestor de campos guardando automáticamente la preferencia.
    * **Agrupación dinámica (Group By):** Agrupa tickets por Estado de Jira, Prioridad, Asignado o Columnas Personalizadas con conteo y colapso/expansión.
-   * **Búsqueda y Ordenamiento multi-campo:** Búsqueda instantánea en tiempo real y ordenación por prioridad, clave o estado.
-   * **Visibilidad de Columnas:** Selector desplegable para mostrar u ocultar campos a conveniencia.
-   * **Creador de Columnas (+):** Añade nuevos campos locales en 2 clics (Single Select, Texto corto, Texto largo, Número, Fecha, Archivy Link).
+   * **Visibilidad de Columnas:** Selector desplegable para mostrar, ocultar y reordenar campos a conveniencia.
+   * **Creador de Columnas (+):** Añade nuevos campos locales en 2 clics (Single Select, Texto corto, Texto largo, Número, Fecha, Archivy Link). Las celdas personalizadas locales soportan edición rápida mediante icono de lápiz o doble clic.
 
 2. **Regla de Persistencia Segura (No-Overwrite Guarantee):**
    * Los tickets de Jira se sincronizan vía **UPSERT** sobre `jira_issues`.

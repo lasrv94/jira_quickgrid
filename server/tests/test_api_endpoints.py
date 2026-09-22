@@ -45,7 +45,15 @@ def test_columns_crud():
     assert update_res.status_code == 200
     assert update_res.json()["name"] == "QA Signoff Final"
 
-    # 4. Delete column
+    # 4. Reorder columns
+    reorder_res = client.post("/api/columns/reorder", json={"column_ids": [col_id, "col-estado-interno"]})
+    assert reorder_res.status_code == 200
+    reordered_list = reorder_res.json()
+    first_col = next((c for c in reordered_list if c["id"] == col_id), None)
+    assert first_col is not None
+    assert first_col["position"] == 0
+
+    # 5. Delete column
     del_res = client.delete(f"/api/columns/{col_id}")
     assert del_res.status_code == 200
 
@@ -63,18 +71,22 @@ def test_issues_list_and_sync():
     assert len(issues) > 0
     first_key = issues[0]["key"]
 
-    # 3. Update custom value
+    # 3. Update custom value using an active column
+    cols_res = client.get("/api/columns")
+    assert cols_res.status_code == 200
+    target_col_id = cols_res.json()[0]["id"]
+
     custom_val_res = client.post(
         f"/api/issues/{first_key}/custom-values",
-        json={"column_id": "col-estado-interno", "value": "opt-listo"}
+        json={"column_id": target_col_id, "value": "opt-test"}
     )
     assert custom_val_res.status_code == 200
-    assert custom_val_res.json()["value"] == "opt-listo"
+    assert custom_val_res.json()["value"] == "opt-test"
 
     # 4. Verify custom value appears in list_issues
     reloaded_issues = client.get("/api/issues").json()
     matched = next(i for i in reloaded_issues if i["key"] == first_key)
-    assert matched["custom_values"].get("col-estado-interno") == "opt-listo"
+    assert matched["custom_values"].get(target_col_id) == "opt-test"
 
 def test_archivy_notes():
     test_key = "TEST-NOTE-99"
@@ -97,3 +109,70 @@ def test_archivy_notes():
     note_path = data.get("path")
     if note_path and os.path.exists(note_path):
         os.remove(note_path)
+
+def test_jira_fields_and_filter_validation():
+    # 1. Fetch Jira field selectors
+    fields_res = client.get("/api/jira/fields")
+    assert fields_res.status_code == 200
+    fields = fields_res.json()
+    assert len(fields) > 0
+    # Verify presence of core fields
+    field_ids = [f["id"] for f in fields]
+    assert "labels" in field_ids
+    assert "summary" in field_ids
+
+    # 2. Validate filter with JQL
+    val_res = client.post("/api/jira/validate-filter?jql=project%20is%20not%20EMPTY")
+    assert val_res.status_code == 200
+    val_data = val_res.json()
+    assert val_data["valid"] is True
+    assert "name" in val_data
+
+    # 3. Create a column mapped to a Jira field selector
+    col_res = client.post("/api/columns", json={
+        "name": "Jira Labels Column",
+        "type": "jira_field",
+        "jira_field_key": "labels",
+        "width": 180
+    })
+    assert col_res.status_code == 200
+    created_col = col_res.json()
+    assert created_col["jira_field_key"] == "labels"
+
+    # Cleanup created column
+    client.delete(f"/api/columns/{created_col['id']}")
+
+def test_views_crud():
+    # 1. List views (should return seeded views)
+    res = client.get("/api/views")
+    assert res.status_code == 200
+    views = res.json()
+    assert len(views) >= 1
+    default_view = views[0]
+    assert "name" in default_view
+
+    # 2. Create custom view
+    create_res = client.post("/api/views", json={
+        "name": "Sprint Bugs View",
+        "group_by": "priority",
+        "sort_field": "priority",
+        "sort_direction": "desc",
+        "search_query": "bug",
+        "visible_columns": ["col-status", "col-archivy"]
+    })
+    assert create_res.status_code == 200
+    created = create_res.json()
+    assert created["name"] == "Sprint Bugs View"
+    assert created["group_by"] == "priority"
+    view_id = created["id"]
+
+    # 3. Update view
+    upd_res = client.patch(f"/api/views/{view_id}", json={"name": "Sprint Bugs View Updated"})
+    assert upd_res.status_code == 200
+    assert upd_res.json()["name"] == "Sprint Bugs View Updated"
+
+    # 4. Delete view
+    del_res = client.delete(f"/api/views/{view_id}")
+    assert del_res.status_code == 200
+
+

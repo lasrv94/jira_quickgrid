@@ -1,0 +1,20 @@
+# Jira Web Project Rules
+
+1. **Jira Fields are STRICTLY READ-ONLY:**
+   - Any field that originates from Jira (e.g. native Jira fields like summary, status, priority, assignee, components, labels, or ANY custom field fetched from Jira API) MUST NOT be editable in the UI.
+   - Do not add input fields, double-click to edit, or edit pencil icons to these columns.
+   - They must remain read-only.
+
+2. **Local Custom Fields are Editable:**
+   - ONLY custom columns created locally within the application (e.g. single_select, text, number, date) can be edited.
+   - These local fields should have double-click editing and an edit pencil icon that is visible.
+   - Changes to these local fields are persisted in the local SQLite database via the `/api/issues/{key}/custom-values` endpoint, NEVER to Jira.
+
+3. **Styling and Components:**
+   - Jira array fields like Components and Labels should be displayed as multi-pill badges, similar to Airtable.
+   - Always ensure a horizontal scrollbar is present by calculating `totalTableWidth` dynamically to prevent layout breaking when many columns are added.
+
+4. **Column Management:**
+   - Columns must be reorderable via drag and drop on the headers and within the field manager, and their order must be persisted.
+
+Please enforce these rules whenever modifying the DataGrid or backend persistence logic.

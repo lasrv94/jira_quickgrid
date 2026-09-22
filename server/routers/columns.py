@@ -1,6 +1,7 @@
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db
 from models import CustomColumn, CustomColumnCreate, CustomColumnOut, CustomColumnUpdate
@@ -74,7 +75,8 @@ def create_column(data: CustomColumnCreate, db: Session = Depends(get_db)):
         options=data.options or [],
         position=data.position if data.position is not None else count,
         is_visible=data.is_visible if data.is_visible is not None else True,
-        width=data.width or 160
+        width=data.width or 160,
+        jira_field_key=data.jira_field_key
     )
     db.add(new_col)
     db.commit()
@@ -98,6 +100,8 @@ def update_column(column_id: str, data: CustomColumnUpdate, db: Session = Depend
         col.is_visible = data.is_visible
     if data.width is not None:
         col.width = data.width
+    if data.jira_field_key is not None:
+        col.jira_field_key = data.jira_field_key
 
     db.commit()
     db.refresh(col)
@@ -111,3 +115,15 @@ def delete_column(column_id: str, db: Session = Depends(get_db)):
     db.delete(col)
     db.commit()
     return {"status": "success", "deleted_id": column_id}
+
+class ReorderColumnsRequest(BaseModel):
+    column_ids: List[str]
+
+@router.post("/reorder", response_model=List[CustomColumnOut])
+def reorder_columns(data: ReorderColumnsRequest, db: Session = Depends(get_db)):
+    for idx, col_id in enumerate(data.column_ids):
+        col = db.query(CustomColumn).filter(CustomColumn.id == col_id).first()
+        if col:
+            col.position = idx
+    db.commit()
+    return db.query(CustomColumn).order_by(CustomColumn.position.asc()).all()

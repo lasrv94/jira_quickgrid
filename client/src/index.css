@@ -8,19 +8,25 @@
 
 /* Custom scrollbars inspired by Airtable */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
   background: #f1f2f4;
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c7d0;
-  border-radius: 4px;
+  background: #94a3b8;
+  border-radius: 5px;
+  border: 2px solid #f1f2f4;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a5adba;
+  background: #64748b;
+}
+
+::-webkit-scrollbar-corner {
+  background: #f1f2f4;
 }

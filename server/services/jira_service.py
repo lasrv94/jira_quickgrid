@@ -139,7 +139,7 @@ MOCK_ISSUES = [
     }
 ]
 
-DEFAULT_FIELDS = "summary,status,issuetype,priority,assignee,reporter,created,updated,description"
+DEFAULT_FIELDS = "*all"
 
 class JiraService:
     @staticmethod
@@ -239,6 +239,17 @@ class JiraService:
             except Exception as e:
                 logger.warning(f"Error fetching favorite filters: {e}")
 
+        # Ensure user's custom configured filter ID/JQL is present in the list
+        if config.selected_filter_id:
+            already_in = any(r.get("id") == config.selected_filter_id for r in results)
+            if not already_in:
+                filter_label = config.selected_filter_name or f"🎯 Filtro Configurado ({config.selected_filter_id})"
+                results.insert(0, {
+                    "id": config.selected_filter_id,
+                    "name": filter_label,
+                    "jql": config.filter_jql or ""
+                })
+
         return results if results else MOCK_FILTERS
 
     @staticmethod
@@ -277,7 +288,27 @@ class JiraService:
             if matched:
                 config.selected_filter_name = matched["name"]
                 config.filter_jql = matched["jql"]
+            elif filter_id.strip().isdigit():
+                # Fetch directly from Jira filter API
+                base_url, auth, headers = JiraService._get_connection_details(config)
+                if base_url:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        f_res = await client.get(f"{base_url}/rest/api/3/filter/{filter_id.strip()}", auth=auth, headers=headers)
+                        if f_res.status_code == 200:
+                            fdata = f_res.json()
+                            config.selected_filter_name = fdata.get("name", f"Filtro #{filter_id}")
+                            config.filter_jql = fdata.get("jql", "")
             db.commit()
+        elif config.selected_filter_id and config.selected_filter_id.strip().isdigit() and not config.filter_jql:
+            base_url, auth, headers = JiraService._get_connection_details(config)
+            if base_url:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    f_res = await client.get(f"{base_url}/rest/api/3/filter/{config.selected_filter_id.strip()}", auth=auth, headers=headers)
+                    if f_res.status_code == 200:
+                        fdata = f_res.json()
+                        config.selected_filter_name = fdata.get("name", f"Filtro #{config.selected_filter_id}")
+                        config.filter_jql = fdata.get("jql", "")
+                        db.commit()
 
         # Handle Mock Mode
         if config.jira_auth_type == "mock":
@@ -354,11 +385,18 @@ class JiraService:
                     is_archived_in_jira=False,
                 )
                 db.add(new_issue)
+        # Mark issues not in the synced set as archived so the grid only shows issues matching the active filter/query
+        if synced_keys:
+            db.query(JiraIssue).filter(~JiraIssue.key.in_(synced_keys)).update(
+                {"is_archived_in_jira": True}, synchronize_session=False
+            )
+        elif config.jira_auth_type != "mock":
+            db.query(JiraIssue).update({"is_archived_in_jira": True}, synchronize_session=False)
 
         config.last_sync = now
         db.commit()
 
-        total = db.query(JiraIssue).count()
+        total = db.query(JiraIssue).filter(JiraIssue.is_archived_in_jira == False).count()
         return len(synced_keys), total
 
     @staticmethod
@@ -453,6 +491,12 @@ class JiraService:
         reporter = fields.get("reporter") or {}
         reporter_name = reporter.get("displayName")
 
+        # Save full fields payload for custom field selectors
+        raw_payload = {}
+        for k, v in fields.items():
+            if v is not None:
+                raw_payload[k] = v
+
         return {
             "key": key,
             "jira_id": item.get("id"),
@@ -466,8 +510,95 @@ class JiraService:
             "reporter_name": reporter_name,
             "jira_created_at": fields.get("created"),
             "jira_updated_at": fields.get("updated"),
-            "raw_jira_fields": {
-                "description": fields.get("description"),
-                "labels": fields.get("labels", []),
-            },
+            "raw_jira_fields": raw_payload,
         }
+
+    @staticmethod
+    async def get_jira_fields(db: Session) -> List[Dict[str, Any]]:
+        config = JiraService.get_or_create_config(db)
+        if config.jira_auth_type == "mock":
+            return [
+                {"id": "summary", "name": "Resumen (Summary)", "custom": False, "type": "string"},
+                {"id": "description", "name": "Descripción", "custom": False, "type": "string"},
+                {"id": "labels", "name": "Etiquetas (Labels)", "custom": False, "type": "array"},
+                {"id": "components", "name": "Componentes", "custom": False, "type": "array"},
+                {"id": "duedate", "name": "Fecha Límite (Due Date)", "custom": False, "type": "date"},
+                {"id": "customfield_storypoints", "name": "Story Points", "custom": True, "type": "number"},
+                {"id": "fixVersions", "name": "Versiones Corregidas", "custom": False, "type": "array"},
+            ]
+
+        base_url, auth, headers = JiraService._get_connection_details(config)
+        if not base_url:
+            return []
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                res = await client.get(f"{base_url}/rest/api/3/field", auth=auth, headers=headers)
+                if res.status_code == 200:
+                    fields = res.json()
+                    results = []
+                    for f in fields:
+                        results.append({
+                            "id": f.get("id"),
+                            "name": f.get("name"),
+                            "custom": f.get("custom", False),
+                            "type": (f.get("schema") or {}).get("type", "string"),
+                            "navigable": f.get("navigable", True),
+                        })
+                    return results
+            except Exception as e:
+                logger.warning(f"Error fetching Jira fields: {e}")
+        return []
+
+    @staticmethod
+    async def validate_filter_or_jql(db: Session, filter_id: Optional[str] = None, jql: Optional[str] = None) -> Dict[str, Any]:
+        config = JiraService.get_or_create_config(db)
+        if config.jira_auth_type == "mock":
+            return {"valid": True, "filter_id": filter_id or "fav-1", "name": "Mock Filter", "jql": jql or "project = CORE", "matched_issues": 8}
+
+        base_url, auth, headers = JiraService._get_connection_details(config)
+        if not base_url:
+            raise HTTPException(status_code=400, detail="Faltan credenciales de Jira.")
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            target_jql = jql
+            filter_name = "Consulta JQL personalizada"
+
+            # If Filter ID was entered
+            if filter_id and filter_id.strip():
+                fid = filter_id.strip()
+                known_filters = await JiraService.get_filters(db)
+                matched_known = next((f for f in known_filters if f["id"] == fid), None)
+                if matched_known:
+                    target_jql = matched_known.get("jql")
+                    filter_name = matched_known.get("name")
+                elif fid.isdigit() or (fid.startswith("fav-") and fid.replace("fav-", "").isdigit()):
+                    clean_id = fid.replace("fav-", "")
+                    f_res = await client.get(f"{base_url}/rest/api/3/filter/{clean_id}", auth=auth, headers=headers)
+                    if f_res.status_code == 200:
+                        fdata = f_res.json()
+                        target_jql = fdata.get("jql")
+                        filter_name = fdata.get("name")
+                    else:
+                        raise HTTPException(status_code=404, detail=f"No se encontró el filtro de Jira con ID {clean_id} en tu instancia.")
+                else:
+                    if not target_jql:
+                        target_jql = fid
+
+            bounded_jql = JiraService._make_bounded_jql(target_jql)
+            url_jql = f"{base_url}/rest/api/3/search/jql"
+            res = await client.get(url_jql, auth=auth, headers=headers, params={"jql": bounded_jql, "maxResults": 1, "fields": "summary"})
+            if res.status_code == 200:
+                data = res.json()
+                count = len(data.get("issues", []))
+                return {
+                    "valid": True,
+                    "filter_id": filter_id,
+                    "name": filter_name,
+                    "jql": target_jql,
+                    "bounded_jql": bounded_jql,
+                    "matched_issues": count,
+                    "message": f"Filtro válido. Coincide con tickets en Jira."
+                }
+            else:
+                raise HTTPException(status_code=400, detail=f"Error validando consulta JQL en Jira: {res.text[:200]}")
