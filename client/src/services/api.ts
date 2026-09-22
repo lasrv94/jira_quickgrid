@@ -110,3 +110,38 @@ export async function validateJiraFilter(filterId?: string, jql?: string): Promi
   return res.json();
 }
 
+export async function fetchViews(): Promise<import('../types').SavedView[]> {
+  const res = await fetch(`${API_BASE}/views`);
+  if (!res.ok) throw new Error('Error al obtener vistas guardadas');
+  return res.json();
+}
+
+export async function createView(data: Partial<import('../types').SavedView>): Promise<import('../types').SavedView> {
+  const res = await fetch(`${API_BASE}/views`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Error al crear vista');
+  return res.json();
+}
+
+export async function updateView(viewId: string, data: Partial<import('../types').SavedView>): Promise<import('../types').SavedView> {
+  const res = await fetch(`${API_BASE}/views/${encodeURIComponent(viewId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Error al actualizar vista');
+  return res.json();
+}
+
+export async function deleteView(viewId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/views/${encodeURIComponent(viewId)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Error al eliminar vista');
+  }
+}
+
+

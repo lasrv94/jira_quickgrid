@@ -84,3 +84,17 @@ export interface ArchivyNote {
   updated_at?: string;
   path?: string;
 }
+
+export interface SavedView {
+  id: string;
+  name: string;
+  group_by?: string | null;
+  sort_field?: string | null;
+  sort_direction?: 'asc' | 'desc';
+  search_query?: string;
+  filter_id?: string | null;
+  visible_columns?: string[] | null;
+  is_default?: boolean;
+  created_at?: string;
+}
+

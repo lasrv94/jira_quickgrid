@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import Base, engine
-from routers import archivy, auth, columns, issues
+from routers import archivy, auth, columns, issues, views
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("jira_app")
@@ -42,6 +42,7 @@ app.include_router(auth.router)
 app.include_router(columns.router)
 app.include_router(issues.router)
 app.include_router(archivy.router)
+app.include_router(views.router)
 
 @app.get("/api/health")
 def health_check():

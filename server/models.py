@@ -94,6 +94,21 @@ class SavedConfig(Base):
     archivy_dir = Column(Text, nullable=True)
 
 
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4())[:8])
+    name = Column(String(128), nullable=False)
+    group_by = Column(String(64), nullable=True)
+    sort_field = Column(String(64), nullable=True)
+    sort_direction = Column(String(16), default="asc")
+    search_query = Column(String(256), default="")
+    filter_id = Column(String(128), nullable=True)
+    visible_columns = Column(JSON, nullable=True)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+
 # ----------------- Pydantic Schemas -----------------
 
 class SelectOption(BaseModel):
@@ -187,3 +202,38 @@ class ConfigUpdateRequest(BaseModel):
     jira_client_id: Optional[str] = None
     jira_client_secret: Optional[str] = None
     archivy_dir: Optional[str] = None
+
+class SavedViewCreate(BaseModel):
+    name: str
+    group_by: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_direction: Optional[str] = "asc"
+    search_query: Optional[str] = ""
+    filter_id: Optional[str] = None
+    visible_columns: Optional[List[str]] = None
+    is_default: Optional[bool] = False
+
+class SavedViewUpdate(BaseModel):
+    name: Optional[str] = None
+    group_by: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_direction: Optional[str] = None
+    search_query: Optional[str] = None
+    filter_id: Optional[str] = None
+    visible_columns: Optional[List[str]] = None
+    is_default: Optional[bool] = None
+
+class SavedViewOut(BaseModel):
+    id: str
+    name: str
+    group_by: Optional[str] = None
+    sort_field: Optional[str] = None
+    sort_direction: str = "asc"
+    search_query: str = ""
+    filter_id: Optional[str] = None
+    visible_columns: Optional[List[str]] = None
+    is_default: bool = False
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+

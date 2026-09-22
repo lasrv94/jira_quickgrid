@@ -130,3 +130,37 @@ def test_jira_fields_and_filter_validation():
     # Cleanup created column
     client.delete(f"/api/columns/{created_col['id']}")
 
+def test_views_crud():
+    # 1. List views (should return seeded views)
+    res = client.get("/api/views")
+    assert res.status_code == 200
+    views = res.json()
+    assert len(views) >= 1
+    default_view = views[0]
+    assert "name" in default_view
+
+    # 2. Create custom view
+    create_res = client.post("/api/views", json={
+        "name": "Sprint Bugs View",
+        "group_by": "priority",
+        "sort_field": "priority",
+        "sort_direction": "desc",
+        "search_query": "bug",
+        "visible_columns": ["col-status", "col-archivy"]
+    })
+    assert create_res.status_code == 200
+    created = create_res.json()
+    assert created["name"] == "Sprint Bugs View"
+    assert created["group_by"] == "priority"
+    view_id = created["id"]
+
+    # 3. Update view
+    upd_res = client.patch(f"/api/views/{view_id}", json={"name": "Sprint Bugs View Updated"})
+    assert upd_res.status_code == 200
+    assert upd_res.json()["name"] == "Sprint Bugs View Updated"
+
+    # 4. Delete view
+    del_res = client.delete(f"/api/views/{view_id}")
+    assert del_res.status_code == 200
+
+

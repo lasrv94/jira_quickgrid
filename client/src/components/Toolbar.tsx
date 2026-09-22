@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   ArrowDownUp,
   Check,
@@ -9,9 +9,11 @@ import {
   RefreshCw,
   Search,
   Settings,
-  X
+  X,
 } from 'lucide-react';
 import type { CustomColumn, JiraFilter } from '../types';
+import type { Language } from '../utils/i18n';
+import { getTranslation } from '../utils/i18n';
 
 interface Props {
   filters: JiraFilter[];
@@ -31,6 +33,7 @@ interface Props {
   sortField: string | null;
   sortDirection: 'asc' | 'desc';
   onSortChange: (field: string | null, dir: 'asc' | 'desc') => void;
+  lang: Language;
 }
 
 export const Toolbar: React.FC<Props> = ({
@@ -51,22 +54,24 @@ export const Toolbar: React.FC<Props> = ({
   sortField,
   sortDirection,
   onSortChange,
+  lang,
 }) => {
+  const t = getTranslation(lang);
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
 
   const formatLastSync = (iso?: string) => {
-    if (!iso) return 'No sincronizado';
+    if (!iso) return lang === 'es' ? 'No sincronizado' : 'Not synced';
     const date = new Date(iso);
     const diffMin = Math.round((Date.now() - date.getTime()) / 60000);
-    if (diffMin <= 1) return 'hace un momento';
-    if (diffMin < 60) return `hace ${diffMin} min`;
+    if (diffMin <= 1) return lang === 'es' ? 'hace un momento' : 'just now';
+    if (diffMin < 60) return lang === 'es' ? `hace ${diffMin} min` : `${diffMin}m ago`;
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
-    <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-xs select-none">
+    <div className="bg-white border-b border-gray-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs select-none shrink-0">
       {/* Left controls: Jira Filter & Sync */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Jira Filter Selector */}
@@ -92,11 +97,11 @@ export const Toolbar: React.FC<Props> = ({
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors shadow-xs"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-          <span>{syncing ? 'Sincronizando...' : 'Actualizar Datos'}</span>
+          <span>{syncing ? t.syncing_btn : t.sync_btn}</span>
         </button>
 
         <span className="text-[11px] text-gray-400 hidden sm:inline">
-          Sync: <strong className="text-gray-600 font-medium">{formatLastSync(lastSync)}</strong>
+          {t.sync_label}: <strong className="text-gray-600 font-medium">{formatLastSync(lastSync)}</strong>
         </span>
       </div>
 
@@ -107,7 +112,7 @@ export const Toolbar: React.FC<Props> = ({
           <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar tickets..."
+            placeholder={t.search_placeholder}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="text-xs pl-8 pr-3 py-1.5 bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-36 sm:w-48 transition-all"
@@ -131,7 +136,7 @@ export const Toolbar: React.FC<Props> = ({
             }`}
           >
             <ArrowDownUp className="w-3.5 h-3.5" />
-            <span>Ordenar</span>
+            <span>{t.sort_btn}</span>
             {sortField && (
               <span className="ml-0.5 px-1 py-0.2 bg-blue-200 text-blue-800 rounded-sm text-[10px]">
                 {sortDirection.toUpperCase()}
@@ -142,7 +147,7 @@ export const Toolbar: React.FC<Props> = ({
           {showSortMenu && (
             <div className="absolute right-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Ordenar por
+                {t.sort_by}
               </div>
               <button
                 onClick={() => {
@@ -153,7 +158,7 @@ export const Toolbar: React.FC<Props> = ({
                   !sortField ? 'font-semibold text-blue-600' : 'text-gray-700'
                 }`}
               >
-                <span>Por defecto (Jira Updated)</span>
+                <span>{t.clear_sort}</span>
                 {!sortField && <Check className="w-3.5 h-3.5" />}
               </button>
               <button
@@ -163,7 +168,7 @@ export const Toolbar: React.FC<Props> = ({
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>Prioridad</span>
+                <span>{t.group_priority}</span>
                 {sortField === 'priority' && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </button>
               <button
@@ -173,7 +178,7 @@ export const Toolbar: React.FC<Props> = ({
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>Estado Jira</span>
+                <span>{t.group_status}</span>
                 {sortField === 'jira_status' && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </button>
               <button
@@ -183,7 +188,7 @@ export const Toolbar: React.FC<Props> = ({
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>Clave (Key)</span>
+                <span>{t.col_key}</span>
                 {sortField === 'key' && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </button>
             </div>
@@ -199,14 +204,14 @@ export const Toolbar: React.FC<Props> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Agrupar</span>
+            <span>{t.group_btn}</span>
             {groupBy && <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />}
           </button>
 
           {showGroupMenu && (
             <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Agrupar registros por
+                {t.group_by_label}
               </div>
               <button
                 onClick={() => {
@@ -217,7 +222,7 @@ export const Toolbar: React.FC<Props> = ({
                   !groupBy ? 'font-semibold text-purple-600' : 'text-gray-700'
                 }`}
               >
-                <span>Sin agrupación</span>
+                <span>{t.no_group}</span>
                 {!groupBy && <Check className="w-3.5 h-3.5" />}
               </button>
               <button
@@ -227,7 +232,7 @@ export const Toolbar: React.FC<Props> = ({
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>Estado Jira</span>
+                <span>{t.group_status}</span>
                 {groupBy === 'jira_status' && <Check className="w-3.5 h-3.5 text-purple-600" />}
               </button>
               <button
@@ -237,7 +242,7 @@ export const Toolbar: React.FC<Props> = ({
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>Prioridad</span>
+                <span>{t.group_priority}</span>
                 {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-purple-600" />}
               </button>
               <button
@@ -247,7 +252,7 @@ export const Toolbar: React.FC<Props> = ({
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>Asignado</span>
+                <span>{t.group_assignee}</span>
                 {groupBy === 'assignee_name' && <Check className="w-3.5 h-3.5 text-purple-600" />}
               </button>
 
@@ -278,13 +283,13 @@ export const Toolbar: React.FC<Props> = ({
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
           >
             <Columns className="w-3.5 h-3.5" />
-            <span>Columnas</span>
+            <span>{t.columns_btn}</span>
           </button>
 
           {showColumnsMenu && (
             <div className="absolute right-0 mt-1 w-60 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 max-h-72 overflow-y-auto animate-in fade-in zoom-in-95">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Visibilidad de Columnas
+                {t.columns_visibility}
               </div>
               {columns.map((c) => (
                 <label
@@ -310,13 +315,13 @@ export const Toolbar: React.FC<Props> = ({
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors"
         >
           <Plus className="w-3.5 h-3.5 text-blue-600" />
-          <span>Añadir Campo</span>
+          <span>{t.add_column_btn}</span>
         </button>
 
         {/* Settings Button */}
         <button
           onClick={onOpenSettings}
-          title="Configuración de Jira y OAuth"
+          title={t.settings_tooltip}
           className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors border border-gray-200"
         >
           <Settings className="w-4 h-4" />

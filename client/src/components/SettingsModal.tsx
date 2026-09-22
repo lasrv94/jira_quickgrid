@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   AlertCircle,
   Check,
@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { createColumn, fetchJiraFields, updateConfig, validateJiraFilter } from '../services/api';
 import type { AppConfig, CustomColumn, JiraFieldInfo } from '../types';
+import type { Language } from '../utils/i18n';
+import { getTranslation } from '../utils/i18n';
 
 interface Props {
   isOpen: boolean;
@@ -24,6 +26,7 @@ interface Props {
   config: AppConfig | null;
   onRefreshConfig: () => Promise<void>;
   existingColumns?: CustomColumn[];
+  lang?: Language;
 }
 
 export const SettingsModal: React.FC<Props> = ({
@@ -32,7 +35,9 @@ export const SettingsModal: React.FC<Props> = ({
   config,
   onRefreshConfig,
   existingColumns = [],
+  lang = 'es',
 }) => {
+  const t = getTranslation(lang);
   const [activeTab, setActiveTab] = useState<'connection' | 'filter' | 'fields' | 'storage'>('connection');
 
   // Connection settings
@@ -66,6 +71,7 @@ export const SettingsModal: React.FC<Props> = ({
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  // Sync state from config when opened
   useEffect(() => {
     if (config) {
       setAuthType(config.jira_auth_type || 'mock');
@@ -78,6 +84,17 @@ export const SettingsModal: React.FC<Props> = ({
     }
   }, [config, isOpen]);
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Load fields when Fields tab is opened
   useEffect(() => {
     if (isOpen && activeTab === 'fields' && jiraFields.length === 0) {
@@ -89,15 +106,18 @@ export const SettingsModal: React.FC<Props> = ({
     setLoadingFields(true);
     try {
       const fields = await fetchJiraFields();
-      setJiraFields(fields);
+      if (Array.isArray(fields)) {
+        setJiraFields(fields);
+      } else {
+        setJiraFields([]);
+      }
     } catch (err: any) {
       console.error('Error fetching Jira fields:', err);
+      setJiraFields([]);
     } finally {
       setLoadingFields(false);
     }
   };
-
-  if (!isOpen) return null;
 
   const handleValidateFilter = async () => {
     setValidatingFilter(true);
@@ -105,18 +125,18 @@ export const SettingsModal: React.FC<Props> = ({
     try {
       const res = await validateJiraFilter(filterId || undefined, filterJql || undefined);
       setFilterValidation({
-        valid: res.valid,
-        name: res.name,
-        message: res.message,
-        matched_issues: res.matched_issues,
+        valid: res?.valid ?? true,
+        name: res?.name,
+        message: res?.message,
+        matched_issues: res?.matched_issues,
       });
-      if (res.jql && !filterJql) {
+      if (res?.jql && !filterJql) {
         setFilterJql(res.jql);
       }
     } catch (err: any) {
       setFilterValidation({
         valid: false,
-        error: err.message,
+        error: err?.message || 'Error validando filtro',
       });
     } finally {
       setValidatingFilter(false);
@@ -124,10 +144,11 @@ export const SettingsModal: React.FC<Props> = ({
   };
 
   const handleAddJiraFieldAsColumn = async (field: JiraFieldInfo) => {
+    if (!field || !field.id) return;
     setAddingFieldId(field.id);
     try {
       await createColumn({
-        name: field.name,
+        name: field.name || field.id,
         type: 'jira_field',
         jira_field_key: field.id,
         is_visible: true,
@@ -141,8 +162,8 @@ export const SettingsModal: React.FC<Props> = ({
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setSaving(true);
     setStatusMsg(null);
     try {
@@ -158,11 +179,11 @@ export const SettingsModal: React.FC<Props> = ({
         filter_jql: filterJql || undefined,
       });
       await onRefreshConfig();
-      setStatusMsg('Configuración guardada exitosamente.');
+      setStatusMsg(lang === 'es' ? 'Configuración guardada exitosamente.' : 'Settings saved successfully.');
       setTimeout(() => {
         setStatusMsg(null);
         onClose();
-      }, 1200);
+      }, 1000);
     } catch (err: any) {
       setStatusMsg(`Error: ${err.message}`);
     } finally {
@@ -187,39 +208,52 @@ export const SettingsModal: React.FC<Props> = ({
     }
   };
 
-  // Filtered Jira fields in explorer
+  // Safe filtered Jira fields in explorer
   const filteredJiraFields = useMemo(() => {
+    if (!Array.isArray(jiraFields)) return [];
+    const q = (fieldSearch || '').toLowerCase().trim();
     return jiraFields.filter((f) => {
-      const matchesSearch =
-        f.name.toLowerCase().includes(fieldSearch.toLowerCase()) ||
-        f.id.toLowerCase().includes(fieldSearch.toLowerCase());
+      if (!f) return false;
+      const name = String(f.name || '').toLowerCase();
+      const id = String(f.id || '').toLowerCase();
+      const matchesSearch = !q || name.includes(q) || id.includes(q);
       if (!matchesSearch) return false;
 
       if (fieldFilterType === 'standard') return !f.custom;
-      if (fieldFilterType === 'custom') return f.custom;
+      if (fieldFilterType === 'custom') return !!f.custom;
       return true;
     });
   }, [jiraFields, fieldSearch, fieldFilterType]);
 
   const isFieldAlreadyAdded = (fieldId: string) => {
-    return existingColumns.some((col) => col.jira_field_key === fieldId || col.id === fieldId);
+    if (!fieldId || !Array.isArray(existingColumns)) return false;
+    return existingColumns.some((col) => col?.jira_field_key === fieldId || col?.id === fieldId);
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden my-8 animate-in fade-in zoom-in duration-150 flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden my-6 flex flex-col max-h-[85vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/80">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/90 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-800 text-base">Configuración del Sistema</h3>
-              <p className="text-[11px] text-gray-500">Conexión con Jira Cloud, Filtros y Field Selectors</p>
+              <h3 className="font-semibold text-gray-800 text-base">{t.settings_title}</h3>
+              <p className="text-[11px] text-gray-500">{t.settings_subtitle}</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 p-1.5 rounded-md hover:bg-gray-100 transition-colors"
           >
@@ -239,7 +273,7 @@ export const SettingsModal: React.FC<Props> = ({
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>Conexión & Auth</span>
+            <span>{t.tab_connection}</span>
           </button>
 
           <button
@@ -252,7 +286,7 @@ export const SettingsModal: React.FC<Props> = ({
             }`}
           >
             <Filter className="w-4 h-4" />
-            <span>Filtro de Jira (JQL)</span>
+            <span>{t.tab_filter}</span>
           </button>
 
           <button
@@ -265,7 +299,7 @@ export const SettingsModal: React.FC<Props> = ({
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>Jira Field Selectors</span>
+            <span>{t.tab_fields}</span>
             {jiraFields.length > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-700 font-bold">
                 {jiraFields.length}
@@ -283,7 +317,7 @@ export const SettingsModal: React.FC<Props> = ({
             }`}
           >
             <Folder className="w-4 h-4" />
-            <span>Archivy / Wiki</span>
+            <span>{t.tab_storage}</span>
           </button>
         </div>
 
@@ -305,10 +339,9 @@ export const SettingsModal: React.FC<Props> = ({
           {/* TAB 1: CONNECTION & AUTH */}
           {activeTab === 'connection' && (
             <div className="space-y-5">
-              {/* Mode Selector */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">
-                  Modo de Integración Jira
+                  {t.jira_mode_label}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
@@ -321,9 +354,9 @@ export const SettingsModal: React.FC<Props> = ({
                     }`}
                   >
                     <div className="font-bold flex items-center gap-1">
-                      <span>⚡ Modo Mock</span>
+                      <span>⚡ {t.mock_mode}</span>
                     </div>
-                    <div className="text-[11px] text-gray-500 mt-0.5">Demostración local</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{t.mock_title}</div>
                   </button>
 
                   <button
@@ -336,9 +369,9 @@ export const SettingsModal: React.FC<Props> = ({
                     }`}
                   >
                     <div className="font-bold flex items-center gap-1">
-                      <span>🔑 API Token</span>
+                      <span>🔑 {t.pat_mode}</span>
                     </div>
-                    <div className="text-[11px] text-gray-500 mt-0.5">Jira Cloud Token</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{t.pat_title}</div>
                   </button>
 
                   <button
@@ -351,9 +384,9 @@ export const SettingsModal: React.FC<Props> = ({
                     }`}
                   >
                     <div className="font-bold flex items-center gap-1">
-                      <span>🔒 Atlassian OAuth</span>
+                      <span>🔒 {t.oauth_mode}</span>
                     </div>
-                    <div className="text-[11px] text-gray-500 mt-0.5">OAuth 2.0 (3LO)</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{t.oauth_title}</div>
                   </button>
                 </div>
               </div>
@@ -362,7 +395,7 @@ export const SettingsModal: React.FC<Props> = ({
               {authType === 'mock' && (
                 <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
                   <p className="font-semibold mb-1">ℹ️ Modo Simulación Activo</p>
-                  El sistema cargará datos de prueba realistas para que puedas probar la aplicación sin credenciales.
+                  El sistema utilizará datos de prueba para que puedas explorar la interfaz visual, crear vistas y añadir columnas personalizadas sin requerir claves de API.
                 </div>
               )}
 
@@ -370,7 +403,7 @@ export const SettingsModal: React.FC<Props> = ({
               {authType === 'pat' && (
                 <div className="space-y-3.5 p-4 bg-gray-50 rounded-xl border border-gray-200">
                   <div>
-                    <label className="block text-xs text-gray-600 mb-1">Dominio Jira (ej. miempresa.atlassian.net)</label>
+                    <label className="block text-xs text-gray-600 mb-1">{t.domain_label}</label>
                     <input
                       type="text"
                       placeholder="soteasmxsandbox.atlassian.net"
@@ -381,7 +414,7 @@ export const SettingsModal: React.FC<Props> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-gray-600 mb-1">Correo Electrónico de Jira</label>
+                    <label className="block text-xs text-gray-600 mb-1">{t.email_label}</label>
                     <input
                       type="email"
                       placeholder="usuario@empresa.com"
@@ -392,7 +425,7 @@ export const SettingsModal: React.FC<Props> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs text-gray-600 mb-1">Jira API Token</label>
+                    <label className="block text-xs text-gray-600 mb-1">{t.token_label}</label>
                     <input
                       type="password"
                       placeholder={config?.has_api_token ? '••••••••••••••••' : 'Pega tu Jira Cloud API Token'}
@@ -406,7 +439,7 @@ export const SettingsModal: React.FC<Props> = ({
                       rel="noreferrer"
                       className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1 mt-1"
                     >
-                      Generar token en Atlassian Security <ExternalLink className="w-2.5 h-2.5" />
+                      {t.token_link} <ExternalLink className="w-2.5 h-2.5" />
                     </a>
                   </div>
                 </div>
@@ -466,18 +499,18 @@ export const SettingsModal: React.FC<Props> = ({
           {activeTab === 'filter' && (
             <div className="space-y-5">
               <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
-                <p className="font-semibold mb-1">🎯 Filtrado de Tickets desde Jira</p>
-                Puedes configurar un <strong>ID de Filtro de Jira</strong> (número del filtro guardado en tu Jira Cloud, por ejemplo <code className="font-mono bg-blue-100 px-1 rounded">10001</code>) o definir una consulta directa en <strong>JQL</strong>. Al sincronizar, sólo se descargarán los tickets que coincidan con este criterio.
+                <p className="font-semibold mb-1">🎯 {t.tab_filter}</p>
+                {t.filter_desc}
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  ID del Filtro de Jira (Filter ID)
+                  {t.filter_id_label}
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Ej. 10001 o fav-1"
+                    placeholder={t.filter_id_placeholder}
                     value={filterId}
                     onChange={(e) => setFilterId(e.target.value)}
                     className="flex-1 px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white font-mono focus:ring-1 focus:ring-blue-500 text-gray-800"
@@ -493,17 +526,15 @@ export const SettingsModal: React.FC<Props> = ({
                     ) : (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                     )}
-                    <span>Validar con Jira</span>
+                    <span>{validatingFilter ? t.validating : t.validate_filter_btn}</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Encuentra el ID en la URL de Jira al abrir tu filtro: <code className="font-mono text-gray-500">/issues/?filter=10001</code>
-                </p>
+                <p className="text-[11px] text-gray-400 mt-1">{t.filter_id_hint}</p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  Consulta JQL Directa (Jira Query Language)
+                  {t.jql_label}
                 </label>
                 <textarea
                   rows={3}
@@ -517,7 +548,7 @@ export const SettingsModal: React.FC<Props> = ({
               {/* Quick JQL Presets */}
               <div>
                 <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                  Consultas JQL Rápidas
+                  {t.quick_jql}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -525,21 +556,21 @@ export const SettingsModal: React.FC<Props> = ({
                     onClick={() => setFilterJql('project is not EMPTY ORDER BY created DESC')}
                     className="px-2.5 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-200"
                   >
-                    📁 Todos los proyectos
+                    {t.quick_all}
                   </button>
                   <button
                     type="button"
                     onClick={() => setFilterJql('resolution is EMPTY ORDER BY updated DESC')}
                     className="px-2.5 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-200"
                   >
-                    ⏳ Solo tickets abiertos
+                    {t.quick_open}
                   </button>
                   <button
                     type="button"
                     onClick={() => setFilterJql('assignee = currentUser() ORDER BY updated DESC')}
                     className="px-2.5 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-200"
                   >
-                    👤 Asignados a mí
+                    {t.quick_my}
                   </button>
                 </div>
               </div>
@@ -547,7 +578,7 @@ export const SettingsModal: React.FC<Props> = ({
               {/* Validation Result Display */}
               {filterValidation && (
                 <div
-                  className={`p-3.5 rounded-xl border text-xs leading-relaxed animate-in fade-in duration-150 ${
+                  className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
                     filterValidation.valid
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                       : 'bg-rose-50 border-rose-200 text-rose-800'
@@ -557,18 +588,18 @@ export const SettingsModal: React.FC<Props> = ({
                     {filterValidation.valid ? (
                       <>
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>Filtro Válido: {filterValidation.name || 'Consulta JQL Correcta'}</span>
+                        <span>{t.filter_valid}: {filterValidation.name || 'OK'}</span>
                       </>
                     ) : (
                       <>
                         <AlertCircle className="w-4 h-4 text-rose-600" />
-                        <span>Error al validar filtro</span>
+                        <span>{t.filter_error}</span>
                       </>
                     )}
                   </div>
                   {filterValidation.valid ? (
                     <p className="text-[11px] text-emerald-700">
-                      {filterValidation.message || 'La consulta JQL es compatible y devolverá tickets al sincronizar.'}
+                      {filterValidation.message || 'Filtro verificado con éxito.'}
                     </p>
                   ) : (
                     <p className="text-[11px] text-rose-700 font-mono">{filterValidation.error}</p>
@@ -583,10 +614,8 @@ export const SettingsModal: React.FC<Props> = ({
             <div className="space-y-4">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 flex items-center justify-between">
                 <div>
-                  <p className="font-semibold text-gray-800">Explorador de Field Selectors de Jira</p>
-                  <p className="text-[11px] text-gray-500">
-                    Inspecciona todos los campos nativos y personalizados expuestos por Jira Cloud y añádelos a tu tabla con 1 clic.
-                  </p>
+                  <p className="font-semibold text-gray-800">{t.fields_title}</p>
+                  <p className="text-[11px] text-gray-500">{t.fields_desc}</p>
                 </div>
                 <button
                   type="button"
@@ -595,7 +624,7 @@ export const SettingsModal: React.FC<Props> = ({
                   className="px-2.5 py-1.5 text-xs bg-white hover:bg-gray-100 border border-gray-200 rounded-lg flex items-center gap-1 text-gray-700 shadow-2xs"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingFields ? 'animate-spin text-blue-600' : ''}`} />
-                  <span>Recargar</span>
+                  <span>{t.reload_fields}</span>
                 </button>
               </div>
 
@@ -605,7 +634,7 @@ export const SettingsModal: React.FC<Props> = ({
                   <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
                   <input
                     type="text"
-                    placeholder="Buscar campos (ej. Labels, Sprint, Story Points, Components...)"
+                    placeholder={t.search_fields}
                     value={fieldSearch}
                     onChange={(e) => setFieldSearch(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white focus:ring-1 focus:ring-blue-500"
@@ -619,7 +648,7 @@ export const SettingsModal: React.FC<Props> = ({
                       fieldFilterType === 'all' ? 'bg-white shadow-2xs text-blue-700 font-bold' : 'text-gray-600'
                     }`}
                   >
-                    Todos
+                    {t.field_all}
                   </button>
                   <button
                     type="button"
@@ -628,7 +657,7 @@ export const SettingsModal: React.FC<Props> = ({
                       fieldFilterType === 'standard' ? 'bg-white shadow-2xs text-blue-700 font-bold' : 'text-gray-600'
                     }`}
                   >
-                    Estándar
+                    {t.field_standard}
                   </button>
                   <button
                     type="button"
@@ -637,7 +666,7 @@ export const SettingsModal: React.FC<Props> = ({
                       fieldFilterType === 'custom' ? 'bg-white shadow-2xs text-blue-700 font-bold' : 'text-gray-600'
                     }`}
                   >
-                    Custom Fields
+                    {t.field_custom}
                   </button>
                 </div>
               </div>
@@ -675,10 +704,10 @@ export const SettingsModal: React.FC<Props> = ({
                           </span>
                           <div className="truncate">
                             <span className="font-semibold text-xs text-gray-800 block truncate">
-                              {field.name}
+                              {field.name || field.id}
                             </span>
                             <span className="font-mono text-[10px] text-gray-400 block truncate">
-                              {field.id} • Tipo: {field.type}
+                              {field.id} • Tipo: {field.type || 'string'}
                             </span>
                           </div>
                         </div>
@@ -687,7 +716,7 @@ export const SettingsModal: React.FC<Props> = ({
                           {alreadyAdded ? (
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                               <Check className="w-3 h-3" />
-                              <span>Columna Activa</span>
+                              <span>{t.column_active}</span>
                             </span>
                           ) : (
                             <button
@@ -701,7 +730,7 @@ export const SettingsModal: React.FC<Props> = ({
                               ) : (
                                 <Plus className="w-3 h-3" />
                               )}
-                              <span>+ Agregar Columna</span>
+                              <span>{t.add_as_column}</span>
                             </button>
                           )}
                         </div>
@@ -718,7 +747,7 @@ export const SettingsModal: React.FC<Props> = ({
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
-                  Directorio de Notas Archivy (Markdown)
+                  {t.archivy_dir_label}
                 </label>
                 <input
                   type="text"
@@ -727,20 +756,18 @@ export const SettingsModal: React.FC<Props> = ({
                   onChange={(e) => setArchivyDir(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white focus:ring-1 focus:ring-blue-500 font-mono text-gray-700"
                 />
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Las notas y documentación de cada ticket se almacenan en archivos Markdown locales (.md) y son completamente versionables en Git.
-                </p>
+                <p className="text-[11px] text-gray-400 mt-1">{t.archivy_dir_hint}</p>
               </div>
             </div>
           )}
         </div>
 
         {/* Modal Footer */}
-        <div className="flex justify-between items-center px-6 py-3.5 bg-gray-50 border-t border-gray-100">
+        <div className="flex justify-between items-center px-6 py-3.5 bg-gray-50 border-t border-gray-100 shrink-0">
           <div className="text-[11px] text-gray-500">
             {activeTab === 'filter' && 'Guarda para aplicar el filtro en la próxima sincronización'}
-            {activeTab === 'fields' && `${jiraFields.length} campos disponibles desde Jira Cloud`}
-            {activeTab === 'connection' && 'Tus credenciales se guardan localmente en SQLite'}
+            {activeTab === 'fields' && `${jiraFields.length} campos disponibles`}
+            {activeTab === 'connection' && 'Almacenamiento seguro SQLite local'}
           </div>
           <div className="flex gap-2">
             <button
@@ -748,15 +775,15 @@ export const SettingsModal: React.FC<Props> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
             >
-              Cerrar
+              {t.close}
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => handleSave()}
               disabled={saving}
               className="px-4 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors disabled:opacity-50"
             >
-              {saving ? 'Guardando...' : 'Guardar Configuración'}
+              {saving ? t.saving : t.save_settings}
             </button>
           </div>
         </div>

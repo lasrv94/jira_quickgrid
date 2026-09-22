@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import type { CustomColumn, JiraIssue } from '../types';
 import { getColorClasses } from '../utils/colors';
+import type { Language } from '../utils/i18n';
+import { getTranslation } from '../utils/i18n';
 
 interface Props {
   issues: JiraIssue[];
@@ -18,6 +20,7 @@ interface Props {
   onOpenAddColumn: () => void;
   onDeleteColumn: (colId: string) => Promise<void>;
   groupBy: string | null;
+  lang?: Language;
 }
 
 export const DataGrid: React.FC<Props> = ({
@@ -28,7 +31,9 @@ export const DataGrid: React.FC<Props> = ({
   onOpenAddColumn,
   onDeleteColumn,
   groupBy,
+  lang = 'es',
 }) => {
+  const t = getTranslation(lang);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [activeDropdown, setActiveDropdown] = useState<{ issueKey: string; colId: string } | null>(null);
   const [editingText, setEditingText] = useState<{ issueKey: string; colId: string; val: string } | null>(null);
@@ -201,31 +206,31 @@ export const DataGrid: React.FC<Props> = ({
             <th className="w-28 px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-10 z-30">
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
-                <span>Clave Jira</span>
+                <span>{t.col_key}</span>
               </div>
             </th>
             <th className="min-w-[280px] max-w-[400px] px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-38 z-30">
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
-                <span>Título / Summary</span>
+                <span>{t.col_summary}</span>
               </div>
             </th>
             <th className="w-32 px-3 py-2.5 border-r border-gray-200">
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
-                <span>Estado Jira</span>
+                <span>{t.col_status}</span>
               </div>
             </th>
             <th className="w-28 px-3 py-2.5 border-r border-gray-200">
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
-                <span>Prioridad</span>
+                <span>{t.col_priority}</span>
               </div>
             </th>
             <th className="w-36 px-3 py-2.5 border-r border-gray-200">
               <div className="flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-gray-400" />
-                <span>Asignado</span>
+                <span>{t.col_assignee}</span>
               </div>
             </th>
 
@@ -360,7 +365,7 @@ export const DataGrid: React.FC<Props> = ({
                             </div>
                           )}
                           <span className="text-gray-700 truncate max-w-[100px]">
-                            {issue.assignee_name || 'Sin asignar'}
+                            {issue.assignee_name || t.unassigned}
                           </span>
                         </div>
                       </td>
