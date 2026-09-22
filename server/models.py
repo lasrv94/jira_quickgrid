@@ -105,6 +105,7 @@ class SavedView(Base):
     search_query = Column(String(256), default="")
     filter_id = Column(String(128), nullable=True)
     visible_columns = Column(JSON, nullable=True)
+    filter_rules = Column(JSON, nullable=True)
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
@@ -211,6 +212,7 @@ class SavedViewCreate(BaseModel):
     search_query: Optional[str] = ""
     filter_id: Optional[str] = None
     visible_columns: Optional[List[str]] = None
+    filter_rules: Optional[Any] = None
     is_default: Optional[bool] = False
 
 class SavedViewUpdate(BaseModel):
@@ -221,6 +223,7 @@ class SavedViewUpdate(BaseModel):
     search_query: Optional[str] = None
     filter_id: Optional[str] = None
     visible_columns: Optional[List[str]] = None
+    filter_rules: Optional[Any] = None
     is_default: Optional[bool] = None
 
 class SavedViewOut(BaseModel):
@@ -232,6 +235,7 @@ class SavedViewOut(BaseModel):
     search_query: str = ""
     filter_id: Optional[str] = None
     visible_columns: Optional[List[str]] = None
+    filter_rules: Optional[Any] = None
     is_default: bool = False
     created_at: Optional[datetime] = None
 

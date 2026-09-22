@@ -85,6 +85,41 @@ export interface ArchivyNote {
   path?: string;
 }
 
+export type FilterOperator =
+  | 'contains'
+  | 'not_contains'
+  | 'equals'
+  | 'not_equals'
+  | 'starts_with'
+  | 'ends_with'
+  | 'has_any_of'
+  | 'has_all_of'
+  | 'has_none_of'
+  | 'is_exactly'
+  | 'is_empty'
+  | 'is_not_empty'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'is_before'
+  | 'is_after'
+  | 'is_today';
+
+export interface FilterCondition {
+  id: string;
+  fieldId: string;
+  operator: FilterOperator;
+  value: string;
+}
+
+export type FilterConjunction = 'and' | 'or';
+
+export interface FilterRules {
+  conditions: FilterCondition[];
+  conjunction: FilterConjunction;
+}
+
 export interface SavedView {
   id: string;
   name: string;
@@ -94,7 +129,9 @@ export interface SavedView {
   search_query?: string;
   filter_id?: string | null;
   visible_columns?: string[] | null;
+  filter_rules?: FilterRules | null;
   is_default?: boolean;
   created_at?: string;
 }
+
 

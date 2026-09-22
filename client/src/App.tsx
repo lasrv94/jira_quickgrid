@@ -24,10 +24,11 @@ import {
   syncIssues,
   updateColumn,
 } from './services/api';
-import type { AppConfig, CustomColumn, JiraFilter, JiraIssue, SavedView } from './types';
+import type { AppConfig, CustomColumn, FilterCondition, FilterConjunction, JiraFilter, JiraIssue, SavedView } from './types';
 import type { Language } from './utils/i18n';
 import { getTranslation } from './utils/i18n';
 import { exportIssuesToPdf } from './utils/pdfExport';
+import { filterIssues } from './utils/filterEvaluator';
 
 export function App() {
   const [lang, setLang] = useState<Language>(() => {
@@ -53,6 +54,8 @@ export function App() {
   const [groupBy, setGroupBy] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([]);
+  const [filterConjunction, setFilterConjunction] = useState<FilterConjunction>('and');
 
   // Modals & Drawers
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
@@ -261,6 +264,13 @@ export function App() {
     setSortField(view.sort_field || null);
     setSortDirection(view.sort_direction || 'asc');
     setSearchQuery(view.search_query || '');
+    if (view.filter_rules?.conditions) {
+      setFilterConditions(view.filter_rules.conditions);
+      setFilterConjunction(view.filter_rules.conjunction || 'and');
+    } else {
+      setFilterConditions([]);
+      setFilterConjunction('and');
+    }
     if (view.filter_id) {
       handleSelectFilter(view.filter_id);
     }
@@ -277,6 +287,11 @@ export function App() {
 
   const handleCreateView = async (name: string) => {
     const visibleColIds = columns.filter((c) => c.is_visible).map((c) => c.id);
+    const filterRules = filterConditions.length > 0 ? {
+      conditions: filterConditions,
+      conjunction: filterConjunction,
+    } : null;
+
     const newView = await createView({
       name,
       group_by: groupBy,
@@ -285,6 +300,7 @@ export function App() {
       search_query: searchQuery,
       filter_id: selectedFilterId,
       visible_columns: visibleColIds,
+      filter_rules: filterRules,
     });
     setViews((prev) => [...prev, newView]);
     setActiveViewId(newView.id);
@@ -308,6 +324,7 @@ export function App() {
   const filteredAndSortedIssues = useMemo(() => {
     let result = [...issues];
 
+    // 1. Text Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -319,6 +336,12 @@ export function App() {
       );
     }
 
+    // 2. Airtable Multi-Field Filters
+    if (filterConditions.length > 0) {
+      result = filterIssues(result, filterConditions, filterConjunction, columns);
+    }
+
+    // 3. Sorting
     if (sortField) {
       result.sort((a, b) => {
         let valA: any = (a as any)[sortField] ?? '';
@@ -337,7 +360,7 @@ export function App() {
     }
 
     return result;
-  }, [issues, searchQuery, sortField, sortDirection]);
+  }, [issues, searchQuery, filterConditions, filterConjunction, columns, sortField, sortDirection]);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#f4f5f7] overflow-hidden text-gray-900">
@@ -433,6 +456,13 @@ export function App() {
           setSortField(field);
           setSortDirection(dir);
         }}
+        filterConditions={filterConditions}
+        onFilterConditionsChange={setFilterConditions}
+        filterConjunction={filterConjunction}
+        onFilterConjunctionChange={setFilterConjunction}
+        issues={issues}
+        matchingCount={filteredAndSortedIssues.length}
+        totalCount={issues.length}
         lang={lang}
       />
 

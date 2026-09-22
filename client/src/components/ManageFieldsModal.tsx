@@ -349,8 +349,9 @@ export const ManageFieldsModal: React.FC<Props> = ({
                       ) : (
                         <div className="flex items-center gap-1.5 truncate">
                           <span
+                            onDoubleClick={() => startRename(col)}
                             onClick={() => onOpenEditColumn(col)}
-                            title={isEs ? 'Clic para editar configuración' : 'Click to edit config'}
+                            title={isEs ? 'Doble clic para renombrar, clic para configuración' : 'Double click to rename, click for config'}
                             className="font-semibold text-xs text-gray-800 truncate cursor-pointer hover:text-blue-600"
                           >
                             {col.name}

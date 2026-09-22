@@ -71,6 +71,7 @@ def create_view(data: SavedViewCreate, db: Session = Depends(get_db)):
         search_query=data.search_query or "",
         filter_id=data.filter_id,
         visible_columns=data.visible_columns,
+        filter_rules=data.filter_rules,
         is_default=bool(data.is_default),
     )
     db.add(view)

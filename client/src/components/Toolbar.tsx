@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Columns,
   FileDown,
+  Filter,
   Layers,
   Plus,
   RefreshCw,
@@ -13,9 +14,10 @@ import {
   SlidersHorizontal,
   X,
 } from 'lucide-react';
-import type { CustomColumn, JiraFilter } from '../types';
+import type { CustomColumn, FilterCondition, FilterConjunction, JiraFilter, JiraIssue } from '../types';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
+import { FilterMenu } from './FilterMenu';
 
 interface Props {
   filters: JiraFilter[];
@@ -37,6 +39,13 @@ interface Props {
   sortField: string | null;
   sortDirection: 'asc' | 'desc';
   onSortChange: (field: string | null, dir: 'asc' | 'desc') => void;
+  filterConditions: FilterCondition[];
+  onFilterConditionsChange: (conditions: FilterCondition[]) => void;
+  filterConjunction: FilterConjunction;
+  onFilterConjunctionChange: (conjunction: FilterConjunction) => void;
+  issues: JiraIssue[];
+  matchingCount: number;
+  totalCount: number;
   lang: Language;
 }
 
@@ -60,9 +69,17 @@ export const Toolbar: React.FC<Props> = ({
   sortField,
   sortDirection,
   onSortChange,
+  filterConditions,
+  onFilterConditionsChange,
+  filterConjunction,
+  onFilterConjunctionChange,
+  issues,
+  matchingCount,
+  totalCount,
   lang,
 }) => {
   const t = getTranslation(lang);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -131,6 +148,42 @@ export const Toolbar: React.FC<Props> = ({
               <X className="w-3 h-3" />
             </button>
           )}
+        </div>
+
+        {/* Airtable-Style Multi-field Filter Button */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            title={lang === 'es' ? 'Filtrar por uno o varios campos' : 'Filter by one or multiple fields'}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+              filterConditions.length > 0
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-semibold shadow-2xs'
+                : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+            }`}
+          >
+            <Filter className={`w-3.5 h-3.5 ${filterConditions.length > 0 ? 'text-emerald-600' : 'text-gray-500'}`} />
+            <span>{t.filter_btn}</span>
+            {filterConditions.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 bg-emerald-200 text-emerald-900 rounded-full text-[10px] font-bold">
+                {filterConditions.length}
+              </span>
+            )}
+          </button>
+
+          <FilterMenu
+            isOpen={showFilterMenu}
+            onClose={() => setShowFilterMenu(false)}
+            conditions={filterConditions}
+            onChangeConditions={onFilterConditionsChange}
+            conjunction={filterConjunction}
+            onChangeConjunction={onFilterConjunctionChange}
+            columns={columns}
+            issues={issues}
+            matchingCount={matchingCount}
+            totalCount={totalCount}
+            lang={lang}
+          />
         </div>
 
         {/* Sort Menu */}
