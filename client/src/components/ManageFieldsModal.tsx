@@ -25,6 +25,7 @@ interface Props {
   onUpdateColumn: (colId: string, data: Partial<CustomColumn>) => Promise<void>;
   onDeleteColumn: (colId: string) => Promise<void>;
   onOpenAddColumn: () => void;
+  onOpenEditColumn: (col: CustomColumn) => void;
   lang?: Language;
 }
 
@@ -37,6 +38,7 @@ export const ManageFieldsModal: React.FC<Props> = ({
   onUpdateColumn,
   onDeleteColumn,
   onOpenAddColumn,
+  onOpenEditColumn,
   lang = 'es',
 }) => {
   const isEs = lang === 'es';
@@ -347,8 +349,8 @@ export const ManageFieldsModal: React.FC<Props> = ({
                       ) : (
                         <div className="flex items-center gap-1.5 truncate">
                           <span
-                            onClick={() => startRename(col)}
-                            title={isEs ? 'Clic para renombrar' : 'Click to rename'}
+                            onClick={() => onOpenEditColumn(col)}
+                            title={isEs ? 'Clic para editar configuración' : 'Click to edit config'}
                             className="font-semibold text-xs text-gray-800 truncate cursor-pointer hover:text-blue-600"
                           >
                             {col.name}
@@ -369,8 +371,8 @@ export const ManageFieldsModal: React.FC<Props> = ({
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      onClick={() => startRename(col)}
-                      title={isEs ? 'Renombrar campo' : 'Rename field'}
+                      onClick={() => onOpenEditColumn(col)}
+                      title={isEs ? 'Editar configuración del campo' : 'Edit field configuration'}
                       className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                     >
                       <Edit2 className="w-3 h-3" />

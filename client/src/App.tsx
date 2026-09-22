@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Table, Globe } from 'lucide-react';
 import { AddColumnModal } from './components/AddColumnModal';
+import { EditColumnModal } from './components/EditColumnModal';
 import { ArchivyDrawer } from './components/ArchivyDrawer';
 import { CreateViewModal } from './components/CreateViewModal';
 import { DataGrid } from './components/DataGrid';
@@ -55,6 +56,7 @@ export function App() {
 
   // Modals & Drawers
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
   const [isManageFieldsOpen, setIsManageFieldsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeArchivyIssue, setActiveArchivyIssue] = useState<JiraIssue | null>(null);
@@ -475,6 +477,10 @@ export function App() {
           setIsManageFieldsOpen(false);
           setIsAddColumnOpen(true);
         }}
+        onOpenEditColumn={(col) => {
+          setIsManageFieldsOpen(false);
+          setEditingColumn(col);
+        }}
         lang={lang}
       />
 
@@ -483,6 +489,17 @@ export function App() {
         isOpen={isAddColumnOpen}
         onClose={() => setIsAddColumnOpen(false)}
         onAddColumn={handleAddColumn}
+      />
+
+      {/* Edit Column Modal */}
+      <EditColumnModal
+        isOpen={!!editingColumn}
+        onClose={() => {
+          setEditingColumn(null);
+          setIsManageFieldsOpen(true); // Re-open manage fields when done
+        }}
+        column={editingColumn}
+        onUpdateColumn={handleUpdateColumn}
       />
 
       {/* Jira Connection Settings Modal */}
