@@ -239,6 +239,17 @@ class JiraService:
             except Exception as e:
                 logger.warning(f"Error fetching favorite filters: {e}")
 
+        # Ensure user's custom configured filter ID/JQL is present in the list
+        if config.selected_filter_id:
+            already_in = any(r.get("id") == config.selected_filter_id for r in results)
+            if not already_in:
+                filter_label = config.selected_filter_name or f"🎯 Filtro Configurado ({config.selected_filter_id})"
+                results.insert(0, {
+                    "id": config.selected_filter_id,
+                    "name": filter_label,
+                    "jql": config.filter_jql or ""
+                })
+
         return results if results else MOCK_FILTERS
 
     @staticmethod
@@ -374,11 +385,18 @@ class JiraService:
                     is_archived_in_jira=False,
                 )
                 db.add(new_issue)
+        # Mark issues not in the synced set as archived so the grid only shows issues matching the active filter/query
+        if synced_keys:
+            db.query(JiraIssue).filter(~JiraIssue.key.in_(synced_keys)).update(
+                {"is_archived_in_jira": True}, synchronize_session=False
+            )
+        elif config.jira_auth_type != "mock":
+            db.query(JiraIssue).update({"is_archived_in_jira": True}, synchronize_session=False)
 
         config.last_sync = now
         db.commit()
 
-        total = db.query(JiraIssue).count()
+        total = db.query(JiraIssue).filter(JiraIssue.is_archived_in_jira == False).count()
         return len(synced_keys), total
 
     @staticmethod

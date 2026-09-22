@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { createColumn, fetchJiraFields, updateConfig, validateJiraFilter } from '../services/api';
+import { createColumn, fetchJiraFields, syncIssues, updateConfig, validateJiraFilter } from '../services/api';
 import type { AppConfig, CustomColumn, JiraFieldInfo } from '../types';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
@@ -178,6 +178,11 @@ export const SettingsModal: React.FC<Props> = ({
         selected_filter_id: filterId || undefined,
         filter_jql: filterJql || undefined,
       });
+      try {
+        await syncIssues(filterId || undefined);
+      } catch (syncErr) {
+        console.warn('Auto-sync after settings save:', syncErr);
+      }
       await onRefreshConfig();
       setStatusMsg(lang === 'es' ? 'Configuración guardada exitosamente.' : 'Settings saved successfully.');
       setTimeout(() => {

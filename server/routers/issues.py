@@ -25,14 +25,17 @@ async def sync_jira_issues(filter_id: Optional[str] = None, db: Session = Depend
     }
 
 @router.get("/issues", response_model=List[IssueOut])
-def list_issues(db: Session = Depends(get_db)):
+def list_issues(include_archived: bool = Query(False), db: Session = Depends(get_db)):
     # Auto-seed mock issues if database is empty so app works immediately
     count = db.query(JiraIssue).count()
     if count == 0:
         import asyncio
         asyncio.run(JiraService.sync_issues_from_jira(db))
 
-    issues = db.query(JiraIssue).order_by(JiraIssue.jira_updated_at.desc()).all()
+    query = db.query(JiraIssue)
+    if not include_archived:
+        query = query.filter(JiraIssue.is_archived_in_jira == False)
+    issues = query.order_by(JiraIssue.jira_updated_at.desc()).all()
     results = []
     for issue in issues:
         vals = db.query(IssueCustomValue).filter(IssueCustomValue.issue_key == issue.key).all()
