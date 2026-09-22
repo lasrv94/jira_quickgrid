@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+client/node_modules/
+.venv/
+server/.venv/
+
+# Build artifacts
+dist/
+client/dist/
+build/
+
+# Python cache & tests
+__pycache__/
+server/__pycache__/
+server/*/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local databases & WAL files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+server/*.db*
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Logs & OS Files
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
