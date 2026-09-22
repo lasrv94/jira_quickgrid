@@ -78,7 +78,7 @@ def jira_oauth_login(redirect_uri: str = "http://localhost:5173/auth/callback", 
         "client_id": client_id,
         "scope": "read:jira-work read:jira-user offline_access",
         "redirect_uri": redirect_uri,
-        "state": "jira_airtable_session",
+        "state": "jira_quickgrid_session",
         "response_type": "code",
         "prompt": "consent",
     }

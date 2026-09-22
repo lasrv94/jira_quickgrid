@@ -2,7 +2,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 echo "========================================================"
-echo "  Iniciando Jira Airtable Web App"
+echo "  Iniciando Jira QuickGrid Web App"
 echo "========================================================"
 
 # Trap to kill background processes on exit

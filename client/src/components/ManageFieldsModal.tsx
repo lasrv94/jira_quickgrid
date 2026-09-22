@@ -169,8 +169,8 @@ export const ManageFieldsModal: React.FC<Props> = ({
               </h2>
               <p className="text-[11px] text-gray-500">
                 {isEs
-                  ? `Muestra, oculta, reordena y edita las columnas estilo Airtable (${visibleCount} visibles)`
-                  : `Show, hide, reorder and edit columns Airtable style (${visibleCount} visible)`}
+                  ? `Muestra, oculta, reordena y edita las columnas del grid (${visibleCount} visibles)`
+                  : `Show, hide, reorder and edit grid columns (${visibleCount} visible)`}
               </p>
             </div>
           </div>

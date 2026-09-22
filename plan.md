@@ -1,6 +1,6 @@
 # Implementation Plan: Jira QuickGrid
 
-An internal web application for visual, modern, and lightweight Jira issue management featuring an **Airtable-style** data grid, **OAuth 2.0 (3LO)** and **API Token** authentication, persistent local custom fields (internal statuses, QA commentary, color single-selects) that are **never overwritten during sync**, and integrated **Archivy** Markdown knowledge base support.
+An internal web application for visual, modern, and lightweight Jira issue management featuring a **QuickGrid** smart data grid, **OAuth 2.0 (3LO)** and **API Token** authentication, persistent local custom fields (internal statuses, QA commentary, color single-selects) that are **never overwritten during sync**, and integrated **Archivy** Markdown knowledge base support.
 
 ---
 
@@ -8,7 +8,7 @@ An internal web application for visual, modern, and lightweight Jira issue manag
 
 ### Frontend (SPA, Reactive & Local-First)
 * **Framework:** React 19 / Vite + TypeScript.
-* **Styling:** Tailwind CSS v4 with an Airtable-inspired palette (soft pastel pills, subtle borders, high-density typography).
+* **Styling:** Tailwind CSS v4 with a clean pastel palette (soft pill badges, subtle borders, high-density typography).
 * **Data Grid:** TanStack Table v8 with dynamic horizontal scrolling and sticky columns (`Key`, `Summary`).
 * **Icons & UI:** Lucide React icons.
 * **Bilingual Support:** Integrated English & Spanish localization dictionary (`client/src/utils/i18n.ts`).
@@ -93,7 +93,7 @@ erDiagram
         string search_query "Search text"
         string filter_id "Jira filter ID"
         json visible_columns "Array of column IDs"
-        json filter_rules "Compound Airtable filter rules"
+        json filter_rules "Compound smart filter rules"
         boolean is_default "Default view flag"
     }
 ```
@@ -109,7 +109,7 @@ erDiagram
 
 ---
 
-## 4. Airtable-Style Filtering Engine
+## 4. Smart Filtering Engine (QuickGrid Rules)
 
 * **Compound Rules:** Global `AND` / `OR` conjunction toggle.
 * **Operators:**

@@ -2,7 +2,7 @@
 set -e
 
 echo "========================================================"
-echo "  Instalador Automático - Jira Airtable Web App"
+echo "  Instalador Automático - Jira QuickGrid Web App"
 echo "========================================================"
 echo ""
 

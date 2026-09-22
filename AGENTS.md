@@ -8,7 +8,7 @@ This document provides system context, architectural invariants, code convention
 
 * **Frontend:**
   * **Framework:** React 19 (functional components + hooks), Vite v8, TypeScript 5.8+.
-  * **Styling:** Tailwind CSS v4 (`@tailwindcss/vite`). Clean, modern Airtable-inspired styling (soft pastels, subtle borders, compact typography).
+  * **Styling:** Tailwind CSS v4 (`@tailwindcss/vite`). Clean, modern interactive grid styling (soft pastels, subtle borders, compact typography).
   * **Icons:** `lucide-react`.
   * **Bilingual Support:** `client/src/utils/i18n.ts`. All user-facing strings must support both English (`en`) and Spanish (`es`).
 * **Backend:**

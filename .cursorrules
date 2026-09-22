@@ -11,7 +11,7 @@
    - Changes to these local fields are persisted in the local SQLite database via the `/api/issues/{key}/custom-values` endpoint, NEVER to Jira.
 
 3. **Styling and Components:**
-   - Jira array fields like Components and Labels should be displayed as multi-pill badges, similar to Airtable.
+   - Jira array fields like Components and Labels should be displayed as multi-pill badges, characteristic of modern data grid systems.
    - Always ensure a horizontal scrollbar is present by calculating `totalTableWidth` dynamically to prevent layout breaking when many columns are added.
 
 4. **Column Management:**

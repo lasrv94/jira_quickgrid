@@ -29,8 +29,8 @@ except Exception as e:
     logger.warning(f"Database migration note: {e}")
 
 app = FastAPI(
-    title="Jira Airtable-like Web App",
-    description="Internal Jira management web app with Airtable interface, persistent local custom fields, and Archivy integration",
+    title="Jira QuickGrid API",
+    description="Internal Jira management web app with QuickGrid interface, persistent local custom fields, and Archivy integration",
     version="1.0.0",
 )
 
@@ -52,7 +52,7 @@ app.include_router(views.router)
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "app": "Jira Airtable Web"}
+    return {"status": "ok", "app": "Jira QuickGrid"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,6 +1,6 @@
-# PowerShell launcher for Jira Airtable Web App
+# PowerShell launcher for Jira QuickGrid Web App
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host "  Iniciando Jira Airtable-like Web App (Full Stack)" -ForegroundColor Green
+Write-Host "  Iniciando Jira QuickGrid Web App (Full Stack)" -ForegroundColor Green
 Write-Host "========================================================" -ForegroundColor Cyan
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

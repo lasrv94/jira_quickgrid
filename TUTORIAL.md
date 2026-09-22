@@ -74,7 +74,7 @@ This starts both the FastAPI backend and Vite frontend concurrently and opens yo
 
 ## 🎯 4. Application User Manual
 
-### 4.1. Navigating the Airtable-Style Data Grid
+### 4.1. Navigating the QuickGrid Interactive Data Grid
 * **Sticky Columns:** The **Jira Key** (`Key`) and **Summary** (`Summary`) columns remain pinned to the left while you scroll horizontally across additional fields.
 * **Jira Native Columns (Read-Only):** Native Jira columns feature a lock indicator, reminding you they originate from Jira Cloud and cannot be edited locally, guaranteeing fidelity with your company's official source of truth.
 
@@ -90,7 +90,7 @@ You can create internal tracking fields that **Jira does not have** by clicking 
   * The system pulls the latest issue statuses, summaries, and assignees from Jira.
   * **Your local fields (internal statuses, QA comments, ratings) are NEVER overwritten or lost**, as they live in a separate local relational table indexed by the ticket key.
 
-### 4.4. Airtable Multi-Field Filters
+### 4.4. Advanced Multi-Field Filters
 Click **`[ 🔍 Filter ]`** in the top toolbar to open the filtering popover:
 * **Add Multiple Rules:** Click **`+ Add condition`** to add one or more filter rules.
 * **Compound Logic:** Toggle between `All (AND)` (all conditions must match) or `Any (OR)` (any condition matches).

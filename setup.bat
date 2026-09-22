@@ -1,7 +1,7 @@
 @echo off
-title Instalador - Jira Airtable Web App
+title Instalador - Jira QuickGrid Web App
 echo ========================================================
-echo   Instalador Automatico - Jira Airtable Web App
+echo   Instalador Automatico - Jira QuickGrid Web App
 echo ========================================================
 echo.
 

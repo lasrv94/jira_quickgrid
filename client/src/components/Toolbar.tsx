@@ -150,7 +150,7 @@ export const Toolbar: React.FC<Props> = ({
           )}
         </div>
 
-        {/* Airtable-Style Multi-field Filter Button */}
+        {/* Smart Multi-field Filter Button */}
         <div className="relative">
           <button
             type="button"
@@ -368,7 +368,7 @@ export const Toolbar: React.FC<Props> = ({
           )}
         </div>
 
-        {/* Manage Fields Button (Airtable-style) */}
+        {/* Manage Fields Button */}
         {onOpenManageFields && (
           <button
             onClick={onOpenManageFields}

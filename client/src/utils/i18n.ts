@@ -3,7 +3,7 @@ export type Language = 'es' | 'en';
 export const translations = {
   es: {
     // App header
-    app_title: 'Jira Airtable Grid',
+    app_title: 'Jira QuickGrid',
     app_subtitle: 'Gestión visual de tickets Jira con campos locales no sobreescribibles y Archivy Wiki',
     persistent_badge: 'Almacenamiento Persistente Activo',
     connection_mode: 'Modo Conexión',
@@ -51,7 +51,7 @@ export const translations = {
     columns_visibility: 'Visibilidad de Columnas',
     manage_fields_btn: 'Gestionar Campos',
     manage_fields_title: 'Gestionar y Reacomodar Campos',
-    manage_fields_desc: 'Muestra, oculta, reordena y edita las columnas estilo Airtable',
+    manage_fields_desc: 'Muestra, oculta, reordena y edita las columnas de la cuadrícula',
     add_column_btn: 'Añadir Campo',
     settings_tooltip: 'Configuración de Jira, Filtros y Field Selectors',
 
@@ -120,9 +120,9 @@ export const translations = {
     saving: 'Guardando...',
     close: 'Cerrar',
 
-    // Airtable Filters
+    // Smart Multi-Field Filters
     filter_btn: 'Filtrar',
-    filter_menu_title: 'Filtros estilo Airtable',
+    filter_menu_title: 'Filtros Dinámicos Multicampo',
     no_filter_conditions: 'No hay filtros aplicados a esta vista.',
     add_condition_btn: '+ Añadir condición',
     conjunction_where: 'Donde',
@@ -166,7 +166,7 @@ export const translations = {
   },
   en: {
     // App header
-    app_title: 'Jira Airtable Grid',
+    app_title: 'Jira QuickGrid',
     app_subtitle: 'Visual Jira issue management with persistent local custom fields & Archivy Wiki',
     persistent_badge: 'Persistent Storage Active',
     connection_mode: 'Connection Mode',
@@ -214,7 +214,7 @@ export const translations = {
     columns_visibility: 'Column Visibility',
     manage_fields_btn: 'Manage Fields',
     manage_fields_title: 'Manage & Reorder Fields',
-    manage_fields_desc: 'Show, hide, reorder and edit columns Airtable-style',
+    manage_fields_desc: 'Show, hide, reorder and edit grid columns easily',
     add_column_btn: 'Add Field',
     settings_tooltip: 'Jira Settings, Filters & Field Selectors',
 
@@ -283,9 +283,9 @@ export const translations = {
     saving: 'Saving...',
     close: 'Close',
 
-    // Airtable Filters
+    // Smart Multi-Field Filters
     filter_btn: 'Filter',
-    filter_menu_title: 'Airtable-style Filters',
+    filter_menu_title: 'Smart Multi-Field Filters',
     no_filter_conditions: 'No filter conditions applied to this view.',
     add_condition_btn: '+ Add condition',
     conjunction_where: 'Where',

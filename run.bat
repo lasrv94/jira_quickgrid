@@ -1,7 +1,7 @@
 @echo off
-title Jira Airtable Grid
+title Jira QuickGrid
 echo ========================================================
-echo   Iniciando Jira Airtable-like Web App
+echo   Iniciando Jira QuickGrid Web App
 echo ========================================================
 echo.
 

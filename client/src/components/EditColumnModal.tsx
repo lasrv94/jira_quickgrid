@@ -101,7 +101,7 @@ export const EditColumnModal: React.FC<Props> = ({ isOpen, onClose, column, onUp
                   onChange={(e) => setType(e.target.value as ColumnType)}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500 cursor-not-allowed"
                 >
-                  <option value="single_select">Selección Única (Single Select - Airtable Pills)</option>
+                  <option value="single_select">Selección Única (Color Pills)</option>
                   <option value="text">Texto Corto</option>
                   <option value="long_text">Texto Largo / Notas (Multi-línea)</option>
                   <option value="number">Número</option>

@@ -6,7 +6,7 @@
   }
 }
 
-/* Custom scrollbars inspired by Airtable */
+/* Custom scrollbars for QuickGrid */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

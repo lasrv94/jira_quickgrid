@@ -1,5 +1,5 @@
 # Jira QuickGrid 🚀
-### Visual, Modern & Safe Jira Issue Management with Airtable-Style Grid
+### Visual, Modern & Safe Jira Issue Management with Smart Interactive Grid
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
@@ -7,7 +7,7 @@
 [![Tailwind CSS v4](https://img.shields.io/badge/TailwindCSS-v4-38B2AC.svg)](https://tailwindcss.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A modern, fast, local-first web application that turns your Atlassian Jira workspace into an interactive, spreadsheet-like **Airtable grid**. It gives engineering, QA, and product teams the freedom to organize, filter, and augment Jira issues with **persistent local custom fields** that Jira doesn't have—**without altering your company's Jira schema or risking data overwrites.**
+A modern, fast, local-first web application that turns your Atlassian Jira workspace into an interactive, spreadsheet-like **QuickGrid**. It gives engineering, QA, and product teams the freedom to organize, filter, and augment Jira issues with **persistent local custom fields** that Jira doesn't have—**without altering your company's Jira schema or risking data overwrites.**
 
 ---
 
@@ -40,14 +40,14 @@ A modern, fast, local-first web application that turns your Atlassian Jira works
 
 ## 🌟 Key Features
 
-### 1. Airtable-Style Interactive Data Grid
+### 1. Interactive Spreadsheet-Style Data Grid
 * **Sticky Columns:** `Key` and `Summary` stay fixed on the left while horizontally scrolling through dozens of fields.
-* **Airtable-Style Multi-Pills:** Arrays such as Jira *Components*, *Labels*, and custom multi-select fields render as pastel badges.
+* **Smart Multi-Pill Badges:** Arrays such as Jira *Components*, *Labels*, and custom multi-select fields render as pastel badges.
 * **Drag-to-Resize & Column Reordering:** Reorder columns directly by dragging headers or through the dedicated Field Manager modal.
 * **Dynamic Grouping (Group By):** Group records by Jira Status, Priority, Assignee, or custom Single-Select columns with collapsible group headers and count badges.
-* **Field Manager:** Toggle column visibility, reorder columns, rename headers, and inspect field types in an Airtable-style management drawer.
+* **Field Manager:** Toggle column visibility, reorder columns, rename headers, and inspect field types in a dedicated column management drawer.
 
-### 2. Multi-Field Filter Popover (Airtable Logic)
+### 2. Multi-Field Filter Popover (Smart Logic)
 * **Compound Logic:** Combine multiple filter rules with global `AND` (all conditions must match) or `OR` (any condition matches).
 * **Multi-Select Operators:** Native support for single and multi-value fields:
   * `has any of`: Matches if the issue contains at least one of the selected tags.
@@ -89,7 +89,7 @@ flowchart TD
     end
 
     subgraph Client ["Frontend SPA (React 19 + Vite - :5173)"]
-        Grid["Airtable DataGrid\n(TanStack Table + Sticky Headers)"]
+        Grid["QuickGrid DataGrid\n(TanStack Table + Sticky Headers)"]
         FilterEngine["Filter Evaluator Engine\n(Multi-field + Multi-select)"]
         ViewMgr["Saved Views & Tab Manager"]
     end
@@ -228,10 +228,10 @@ JIRA_WEB/
 │   │   │   ├── AddColumnModal.tsx       # Local custom column creator modal
 │   │   │   ├── ArchivyDrawer.tsx        # Markdown documentation side drawer
 │   │   │   ├── CreateViewModal.tsx      # View creation & layout preservation modal
-│   │   │   ├── DataGrid.tsx             # Airtable grid with sticky columns & drag reorder
+│   │   │   ├── DataGrid.tsx             # Interactive grid with sticky columns & drag reorder
 │   │   │   ├── EditColumnModal.tsx      # Modal to edit options of custom single-selects
-│   │   │   ├── FilterMenu.tsx           # Airtable multi-field filter popover
-│   │   │   ├── ManageFieldsModal.tsx    # Airtable field manager & column reorder
+│   │   │   ├── FilterMenu.tsx           # Advanced multi-field filter popover
+│   │   │   ├── ManageFieldsModal.tsx    # Column manager & column reorder modal
 │   │   │   ├── SettingsModal.tsx        # Jira connection, JQL & Field Explorer modal
 │   │   │   ├── Toolbar.tsx              # Main action toolbar (Filter, Sort, Group, Sync)
 │   │   │   └── ViewTabs.tsx             # Saved views bar

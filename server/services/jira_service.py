@@ -65,7 +65,7 @@ MOCK_ISSUES = [
     {
         "key": "CORE-104",
         "jira_id": "10004",
-        "summary": "Alinear paleta de colores y pill badges con Airtable Design System",
+        "summary": "Alinear paleta de colores y pill badges con QuickGrid Design System",
         "jira_status": "Done",
         "jira_status_category": "Done",
         "issue_type": "Task",
@@ -110,7 +110,7 @@ MOCK_ISSUES = [
     {
         "key": "CORE-107",
         "jira_id": "10007",
-        "summary": "Agrupación dinámica estilo Airtable con recuento de filas y colapso",
+        "summary": "Agrupación dinámica estilo QuickGrid con recuento de filas y colapso",
         "jira_status": "In Progress",
         "jira_status_category": "In Progress",
         "issue_type": "Story",

@@ -336,7 +336,7 @@ export function App() {
       );
     }
 
-    // 2. Airtable Multi-Field Filters
+    // 2. QuickGrid Multi-Field Filters
     if (filterConditions.length > 0) {
       result = filterIssues(result, filterConditions, filterConjunction, columns);
     }
@@ -422,7 +422,7 @@ export function App() {
         </div>
       )}
 
-      {/* Airtable Views Bar */}
+      {/* QuickGrid Views Bar */}
       <ViewTabs
         views={views}
         activeViewId={activeViewId}
@@ -432,7 +432,7 @@ export function App() {
         lang={lang}
       />
 
-      {/* Airtable Toolbar */}
+      {/* QuickGrid Toolbar */}
       <Toolbar
         filters={filters}
         selectedFilterId={selectedFilterId}
@@ -494,7 +494,7 @@ export function App() {
         onClose={() => setActiveArchivyIssue(null)}
       />
 
-      {/* Manage Fields Modal (Airtable-style) */}
+      {/* Manage Fields Modal */}
       <ManageFieldsModal
         isOpen={isManageFieldsOpen}
         onClose={() => setIsManageFieldsOpen(false)}
