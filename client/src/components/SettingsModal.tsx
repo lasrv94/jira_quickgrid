@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ExternalLink, Settings, ShieldCheck, X } from 'lucide-react';
 import { updateConfig } from '../services/api';
 import type { AppConfig } from '../types';
@@ -21,6 +21,16 @@ export const SettingsModal: React.FC<Props> = ({ isOpen, onClose, config, onRefr
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (config) {
+      setAuthType(config.jira_auth_type || 'mock');
+      setDomain(config.jira_domain || '');
+      setEmail(config.jira_email || '');
+      setClientId(config.jira_client_id || '');
+      setArchivyDir(config.archivy_dir || '');
+    }
+  }, [config, isOpen]);
+
   if (!isOpen) return null;
 
   const handleSave = async (e: React.FormEvent) => {
@@ -38,8 +48,11 @@ export const SettingsModal: React.FC<Props> = ({ isOpen, onClose, config, onRefr
         archivy_dir: archivyDir || undefined,
       });
       await onRefreshConfig();
-      setStatusMsg('Configuración guardada exitosamente.');
-      setTimeout(() => setStatusMsg(null), 3000);
+      setStatusMsg('Configuración guardada exitosamente. Sincronizando con Jira...');
+      setTimeout(() => {
+        setStatusMsg(null);
+        onClose();
+      }, 1500);
     } catch (err: any) {
       setStatusMsg(`Error: ${err.message}`);
     } finally {

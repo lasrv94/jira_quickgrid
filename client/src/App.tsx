@@ -314,10 +314,7 @@ export function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         config={config}
-        onRefreshConfig={async () => {
-          const c = await fetchConfig();
-          setConfig(c);
-        }}
+        onRefreshConfig={loadAllData}
       />
     </div>
   );

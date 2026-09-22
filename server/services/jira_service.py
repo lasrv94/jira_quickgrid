@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from fastapi import HTTPException
 import httpx
 from sqlalchemy.orm import Session
 from models import JiraIssue, SavedConfig
@@ -138,6 +139,8 @@ MOCK_ISSUES = [
     }
 ]
 
+DEFAULT_FIELDS = "summary,status,issuetype,priority,assignee,reporter,created,updated,description"
+
 class JiraService:
     @staticmethod
     def get_or_create_config(db: Session) -> SavedConfig:
@@ -156,38 +159,107 @@ class JiraService:
         return config
 
     @staticmethod
+    def _make_bounded_jql(jql: Optional[str]) -> str:
+        """
+        Ensures JQL query satisfies Jira Cloud's requirement for bounded queries (CHANGE-2046).
+        """
+        if not jql or not jql.strip():
+            return "project is not EMPTY ORDER BY created DESC"
+        
+        trimmed = jql.strip()
+        lower = trimmed.lower()
+        if lower.startswith("order by"):
+            return f"project is not EMPTY {trimmed}"
+        
+        # Check if query has project, created, updated, or assignee
+        has_bound = any(k in lower for k in ["project", "created", "updated", "assignee", "reporter", "issuetype", "id", "key"])
+        if not has_bound:
+            return f"project is not EMPTY AND ({trimmed})"
+        
+        return trimmed
+
+    @staticmethod
     async def get_filters(db: Session) -> List[Dict[str, Any]]:
         config = JiraService.get_or_create_config(db)
         if config.jira_auth_type == "mock":
             return MOCK_FILTERS
 
+        base_url, auth, headers = JiraService._get_connection_details(config)
+        if not base_url:
+            return MOCK_FILTERS
+
+        results: List[Dict[str, Any]] = []
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # 1. Fetch Projects from Jira instance
+            try:
+                proj_res = await client.get(f"{base_url}/rest/api/3/project", auth=auth, headers=headers)
+                if proj_res.status_code == 200:
+                    projects = proj_res.json()
+                    # Add "All projects" filter
+                    results.append({
+                        "id": "all-projects",
+                        "name": "✨ Todos los tickets (Todos los proyectos)",
+                        "jql": "project is not EMPTY ORDER BY created DESC"
+                    })
+                    for p in projects:
+                        pkey = p.get("key")
+                        pname = p.get("name") or pkey
+                        results.append({
+                            "id": f"proj-{pkey}",
+                            "name": f"📁 Proyecto: {pkey} ({pname})",
+                            "jql": f"project = \"{pkey}\" ORDER BY created DESC"
+                        })
+            except Exception as e:
+                logger.warning(f"Error fetching projects: {e}")
+
+            # 2. Add smart default filters
+            results.append({
+                "id": "my-assigned",
+                "name": "👤 Mis tickets asignados",
+                "jql": "assignee = currentUser() ORDER BY updated DESC"
+            })
+            results.append({
+                "id": "unassigned-open",
+                "name": "❓ Tickets sin asignar",
+                "jql": "assignee is EMPTY ORDER BY created DESC"
+            })
+
+            # 3. Fetch user favorite filters if any
+            try:
+                fav_res = await client.get(f"{base_url}/rest/api/3/filter/favourite", auth=auth, headers=headers)
+                if fav_res.status_code == 200:
+                    fav_data = fav_res.json()
+                    for f in fav_data:
+                        results.append({
+                            "id": f"fav-{f.get('id')}",
+                            "name": f"⭐ {f.get('name')}",
+                            "jql": f.get("jql", "")
+                        })
+            except Exception as e:
+                logger.warning(f"Error fetching favorite filters: {e}")
+
+        return results if results else MOCK_FILTERS
+
+    @staticmethod
+    def _get_connection_details(config: SavedConfig) -> Tuple[Optional[str], Optional[Tuple[str, str]], Dict[str, str]]:
+        headers = {"Accept": "application/json"}
         if config.jira_auth_type == "pat":
-            # Basic Auth with Jira Domain + Email + Token
             if not config.jira_domain or not config.jira_email or not config.jira_api_token:
-                return MOCK_FILTERS
-            url = f"https://{config.jira_domain}/rest/api/3/filter/favourite"
+                return None, None, {}
+            domain = config.jira_domain.replace("https://", "").replace("http://", "").rstrip("/")
+            base_url = f"https://{domain}"
             auth = (config.jira_email, config.jira_api_token)
-            async with httpx.AsyncClient() as client:
-                res = await client.get(url, auth=auth, headers={"Accept": "application/json"})
-                if res.status_code == 200:
-                    data = res.json()
-                    return [{"id": str(f.get("id")), "name": f.get("name"), "jql": f.get("jql", "")} for f in data]
+            return base_url, auth, headers
 
         if config.jira_auth_type == "oauth":
             if not config.jira_access_token or not config.jira_cloud_id:
-                return MOCK_FILTERS
-            url = f"https://api.atlassian.com/ex/jira/{config.jira_cloud_id}/rest/api/3/filter/favourite"
-            headers = {
-                "Authorization": f"Bearer {config.jira_access_token}",
-                "Accept": "application/json",
-            }
-            async with httpx.AsyncClient() as client:
-                res = await client.get(url, headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    return [{"id": str(f.get("id")), "name": f.get("name"), "jql": f.get("jql", "")} for f in data]
+                return None, None, {}
+            base_url = f"https://api.atlassian.com/ex/jira/{config.jira_cloud_id}"
+            headers["Authorization"] = f"Bearer {config.jira_access_token}"
+            return base_url, None, headers
 
-        return MOCK_FILTERS
+        return None, None, {}
 
     @staticmethod
     async def sync_issues_from_jira(db: Session, filter_id: Optional[str] = None) -> Tuple[int, int]:
@@ -196,31 +268,42 @@ class JiraService:
         Returns (synced_count, total_count).
         """
         config = JiraService.get_or_create_config(db)
+        
+        # If user changed filter
         if filter_id:
             config.selected_filter_id = filter_id
-            # update name/jql if mock
-            for f in MOCK_FILTERS:
-                if f["id"] == filter_id:
-                    config.selected_filter_name = f["name"]
-                    config.filter_jql = f["jql"]
+            filters = await JiraService.get_filters(db)
+            matched = next((f for f in filters if f["id"] == filter_id), None)
+            if matched:
+                config.selected_filter_name = matched["name"]
+                config.filter_jql = matched["jql"]
             db.commit()
 
-        raw_issues = []
-        if config.jira_auth_type == "mock" or not (config.jira_access_token or config.jira_api_token):
+        # Handle Mock Mode
+        if config.jira_auth_type == "mock":
             raw_issues = MOCK_ISSUES
-        elif config.jira_auth_type == "pat":
-            raw_issues = await JiraService._fetch_pat_issues(config)
-        elif config.jira_auth_type == "oauth":
-            raw_issues = await JiraService._fetch_oauth_issues(config)
+        else:
+            base_url, auth, headers = JiraService._get_connection_details(config)
+            if not base_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Faltan credenciales de Jira. Configúralas en el menú de Configuración (⚙️)."
+                )
 
-        if not raw_issues:
-            raw_issues = MOCK_ISSUES
+            jql = JiraService._make_bounded_jql(config.filter_jql)
+            raw_issues = await JiraService._fetch_jira_issues(base_url, auth, headers, jql)
+
+            # In real Jira mode, remove initial mock seed issues if any
+            mock_keys = ["CORE-101", "CORE-102", "CORE-103", "CORE-104", "CORE-105", "CORE-106", "CORE-107", "CORE-108"]
+            db.query(JiraIssue).filter(JiraIssue.key.in_(mock_keys)).delete(synchronize_session=False)
 
         now = datetime.now(timezone.utc)
         synced_keys = set()
 
         for item in raw_issues:
             key = item["key"]
+            if not key:
+                continue
             synced_keys.add(key)
             existing = db.query(JiraIssue).filter(JiraIssue.key == key).first()
             created_dt = None
@@ -238,7 +321,6 @@ class JiraService:
                     pass
 
             if existing:
-                # Update only Jira native fields
                 existing.jira_id = item.get("jira_id")
                 existing.summary = item.get("summary", "")
                 existing.jira_status = item.get("jira_status", "Open")
@@ -280,80 +362,108 @@ class JiraService:
         return len(synced_keys), total
 
     @staticmethod
-    async def _fetch_pat_issues(config: SavedConfig) -> List[Dict[str, Any]]:
-        jql = config.filter_jql or "ORDER BY updated DESC"
-        url = f"https://{config.jira_domain}/rest/api/3/search"
-        auth = (config.jira_email, config.jira_api_token)
-        issues = []
-        start_at = 0
-        max_results = 100
+    async def _fetch_jira_issues(
+        base_url: str,
+        auth: Optional[Tuple[str, str]],
+        headers: Dict[str, str],
+        jql: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetches issues using Jira Cloud's /rest/api/3/search/jql (CHANGE-2046)
+        with fallbacks to /rest/api/3/search and /rest/api/2/search.
+        """
+        issues: List[Dict[str, Any]] = []
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            while True:
-                params = {"jql": jql, "startAt": start_at, "maxResults": max_results}
-                res = await client.get(url, auth=auth, params=params, headers={"Accept": "application/json"})
-                if res.status_code != 200:
-                    break
+            # 1. Try modern /rest/api/3/search/jql API
+            url_jql = f"{base_url}/rest/api/3/search/jql"
+            params = {
+                "jql": jql,
+                "fields": DEFAULT_FIELDS,
+                "maxResults": 100,
+            }
+            res = await client.get(url_jql, auth=auth, headers=headers, params=params)
+            
+            if res.status_code == 200:
                 data = res.json()
-                items = data.get("issues", [])
-                for i in items:
-                    issues.append(JiraService._parse_jira_issue(i))
-                start_at += len(items)
-                total = data.get("total", 0)
-                if start_at >= total or len(items) == 0:
-                    break
+                for i in data.get("issues", []):
+                    parsed = JiraService._parse_jira_issue(i)
+                    if parsed:
+                        issues.append(parsed)
+                return issues
 
-        return issues
+            # Check for auth error
+            if res.status_code in (401, 403):
+                raise HTTPException(
+                    status_code=res.status_code,
+                    detail=f"Error de autenticación con Jira ({res.status_code}): Verifica tu correo y API Token / permisos."
+                )
+
+            # 2. Fallback to /rest/api/3/search
+            url_search = f"{base_url}/rest/api/3/search"
+            res_v3 = await client.get(url_search, auth=auth, headers=headers, params=params)
+            if res_v3.status_code == 200:
+                data = res_v3.json()
+                for i in data.get("issues", []):
+                    parsed = JiraService._parse_jira_issue(i)
+                    if parsed:
+                        issues.append(parsed)
+                return issues
+
+            # 3. Fallback to /rest/api/2/search
+            url_v2 = f"{base_url}/rest/api/2/search"
+            res_v2 = await client.get(url_v2, auth=auth, headers=headers, params=params)
+            if res_v2.status_code == 200:
+                data = res_v2.json()
+                for i in data.get("issues", []):
+                    parsed = JiraService._parse_jira_issue(i)
+                    if parsed:
+                        issues.append(parsed)
+                return issues
+
+            # If all failed, log and raise error
+            err_text = res.text or res_v3.text or res_v2.text
+            logger.error(f"Jira API search failed: status {res.status_code}, response: {err_text}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Jira API error ({res.status_code}): {err_text[:200]}"
+            )
 
     @staticmethod
-    async def _fetch_oauth_issues(config: SavedConfig) -> List[Dict[str, Any]]:
-        jql = config.filter_jql or "ORDER BY updated DESC"
-        url = f"https://api.atlassian.com/ex/jira/{config.jira_cloud_id}/rest/api/3/search"
-        headers = {
-            "Authorization": f"Bearer {config.jira_access_token}",
-            "Accept": "application/json",
-        }
-        issues = []
-        start_at = 0
-        max_results = 100
+    def _parse_jira_issue(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        key = item.get("key")
+        if not key:
+            return None
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            while True:
-                params = {"jql": jql, "startAt": start_at, "maxResults": max_results}
-                res = await client.get(url, headers=headers, params=params)
-                if res.status_code != 200:
-                    break
-                data = res.json()
-                items = data.get("issues", [])
-                for i in items:
-                    issues.append(JiraService._parse_jira_issue(i))
-                start_at += len(items)
-                total = data.get("total", 0)
-                if start_at >= total or len(items) == 0:
-                    break
+        fields = item.get("fields") or {}
+        status = fields.get("status") or {}
+        status_cat_obj = status.get("statusCategory") or {}
+        status_cat = status_cat_obj.get("name", "To Do")
 
-        return issues
+        prio_obj = fields.get("priority") or {}
+        priority_name = prio_obj.get("name", "Medium")
 
-    @staticmethod
-    def _parse_jira_issue(item: Dict[str, Any]) -> Dict[str, Any]:
-        fields = item.get("fields", {})
-        status = fields.get("status", {})
-        status_cat = status.get("statusCategory", {}).get("name", "To Do")
+        itype_obj = fields.get("issuetype") or {}
+        issue_type_name = itype_obj.get("name", "Task")
+
         assignee = fields.get("assignee") or {}
-        avatar_urls = assignee.get("avatarUrls", {})
+        avatar_urls = assignee.get("avatarUrls") or {}
         avatar = avatar_urls.get("48x48") or avatar_urls.get("32x32")
 
+        reporter = fields.get("reporter") or {}
+        reporter_name = reporter.get("displayName")
+
         return {
-            "key": item.get("key"),
+            "key": key,
             "jira_id": item.get("id"),
-            "summary": fields.get("summary", ""),
+            "summary": fields.get("summary") or "",
             "jira_status": status.get("name", "Open"),
             "jira_status_category": status_cat,
-            "issue_type": fields.get("issuetype", {}).get("name", "Task"),
-            "priority": fields.get("priority", {}).get("name", "Medium"),
+            "issue_type": issue_type_name,
+            "priority": priority_name,
             "assignee_name": assignee.get("displayName"),
             "assignee_avatar": avatar,
-            "reporter_name": (fields.get("reporter") or {}).get("displayName"),
+            "reporter_name": reporter_name,
             "jira_created_at": fields.get("created"),
             "jira_updated_at": fields.get("updated"),
             "raw_jira_fields": {
