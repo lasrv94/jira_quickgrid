@@ -19,6 +19,12 @@ try:
         if "jira_field_key" not in col_names and len(col_names) > 0:
             conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN jira_field_key VARCHAR(128)")
             conn.commit()
+
+        view_rows = conn.exec_driver_sql("PRAGMA table_info(saved_views)").fetchall()
+        view_cols = [r[1] for r in view_rows]
+        if "filter_rules" not in view_cols and len(view_cols) > 0:
+            conn.exec_driver_sql("ALTER TABLE saved_views ADD COLUMN filter_rules JSON")
+            conn.commit()
 except Exception as e:
     logger.warning(f"Database migration note: {e}")
 
