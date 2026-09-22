@@ -17,4 +17,13 @@
 4. **Column Management:**
    - Columns must be reorderable via drag and drop on the headers and within the field manager, and their order must be persisted.
 
-Please enforce these rules whenever modifying the DataGrid or backend persistence logic.
+5. **Multi-Field Filters & Multi-Select Support:**
+   - The filtering popover (`FilterMenu.tsx`) must support compound logic (`AND` / `OR`).
+   - For multi-select and array fields (Components, Labels, Jira custom multi-select fields), support `has_any_of`, `has_all_of`, `has_none_of`, and `is_exactly` operators with interactive pill selection.
+   - Always resolve `jira_field_key` in `filterEvaluator.ts` when retrieving issue data from `raw_jira_fields`.
+
+6. **Enterprise Safety & Local-First Invariant:**
+   - Never send tokens or company issue data to any third-party server.
+   - All persistence belongs strictly in local SQLite (`jira_app.db`) and local Markdown files (`server/data/archivy_notes/`).
+
+Please enforce these rules whenever modifying the DataGrid, FilterMenu, or backend persistence logic.

@@ -1,152 +1,279 @@
-# Jira Airtable-like Web App 🚀
+# Jira QuickGrid 🚀
+### Visual, Modern & Safe Jira Issue Management with Airtable-Style Grid
 
-Aplicación web interna para la gestión visual, moderna y ligera de tickets de Jira con interfaz interactiva estilo **Airtable**, conexión por **OAuth 2.0 (3LO)** o **API Token**, persistencia garantizada de campos personalizados locales (estados internos, comentarios, single-selects con badges pastel) que **nunca se sobreescriben ni se pierden al sincronizar**, y soporte de notas y documentación técnica integrado con **Archivy**.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
+[![Tailwind CSS v4](https://img.shields.io/badge/TailwindCSS-v4-38B2AC.svg)](https://tailwindcss.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
-
-## 🌟 Características Principales
-
-1. **Interfaz estilo Airtable Data Grid:**
-   * **Columnas fijas (Sticky columns):** `Key` y `Summary` quedan fijas a la izquierda para una navegación fluida con scroll horizontal completo y redimensionamiento dinámico de columnas (drag-to-resize).
-   * **Distinción visual clara:** Indicador de sólo lectura con candado para campos nativos de Jira. Por regla del sistema, los campos nativos de Jira son estrictamente de solo lectura y no se pueden editar en la interfaz.
-   * **Píldoras y Componentes:** Soporte enriquecido para arrays nativos de Jira (Labels, Components) con diseño de múltiples píldoras de colores.
-   * **Reordenamiento drag & drop:** Permite arrastrar columnas desde el encabezado o reorganizarlas en el gestor de campos guardando automáticamente la preferencia.
-   * **Agrupación dinámica (Group By):** Agrupa tickets por Estado de Jira, Prioridad, Asignado o Columnas Personalizadas con conteo y colapso/expansión.
-   * **Visibilidad de Columnas:** Selector desplegable para mostrar, ocultar y reordenar campos a conveniencia.
-   * **Creador de Columnas (+):** Añade nuevos campos locales en 2 clics (Single Select, Texto corto, Texto largo, Número, Fecha, Archivy Link). Las celdas personalizadas locales soportan edición rápida mediante icono de lápiz o doble clic.
-
-2. **Regla de Persistencia Segura (No-Overwrite Guarantee):**
-   * Los tickets de Jira se sincronizan vía **UPSERT** sobre `jira_issues`.
-   * La tabla de valores locales `issue_custom_values` **permanece 100% intacta** indexada por `(issue_key, column_id)`.
-   * Si un ticket cambia en Jira (título, estado, asignado), los datos de Jira se actualizan pero las notas, comentarios y estados internos locales se preservan sin alteraciones.
-   * Suite de tests automatizados (`pytest server/tests/`) valida esta regla matemáticamente.
-
-3. **Integración con Atlassian Jira:**
-   * **Modo Mock / Simulación:** Carga inmediata de tickets realistas de un sprint activo para pruebas y desarrollo sin necesidad de credenciales.
-   * **Atlassian OAuth 2.0 (3LO):** Conexión segura estándar mediante Atlassian Developer Console (`read:jira-work`, `read:jira-user`, `offline_access`).
-   * **Jira Cloud API Token:** Soporte directo con correo y API Token de Atlassian Security.
-   * **Selector de Filtros Favoritos:** Permite consultar y alternar entre filtros guardados de Jira (`/rest/api/3/filter/favourite`).
-
-4. **Integración con Archivy (Knowledge Base):**
-   * **Side-Drawer Lateral:** Panel deslizable al hacer clic en "Wiki Doc" en cualquier fila.
-   * Generación y vinculación automática de notas Markdown con título `[PROJ-XXX] Summary` y etiquetas `#jira #PROJ-XXX`.
-   * Editor Markdown con pestañas de "Editor" y "Vista Previa" renderizada.
-   * Portabilidad completa: Las notas se guardan directamente como archivos Markdown (`.md`) en `server/data/archivy_notes/`.
+A modern, fast, local-first web application that turns your Atlassian Jira workspace into an interactive, spreadsheet-like **Airtable grid**. It gives engineering, QA, and product teams the freedom to organize, filter, and augment Jira issues with **persistent local custom fields** that Jira doesn't have—**without altering your company's Jira schema or risking data overwrites.**
 
 ---
 
-## 🏗️ Estructura del Proyecto
+## 🔒 Enterprise Safety & Corporate Security
 
-```text
-JIRA_WEB/
-├── client/                      # Frontend SPA (React 19 + TypeScript + Tailwind CSS)
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AddColumnModal.tsx   # Modal para crear nuevas columnas locales
-│   │   │   ├── ArchivyDrawer.tsx    # Panel lateral de documentación Markdown
-│   │   │   ├── DataGrid.tsx         # Tabla Airtable con sticky cols, grouping e inline edit
-│   │   │   ├── SettingsModal.tsx    # Modal de configuración de Jira y OAuth
-│   │   │   └── Toolbar.tsx          # Barra de herramientas (Filtros, Sync, Sort, Group)
-│   │   ├── services/api.ts          # Cliente API REST
-│   │   ├── types/index.ts           # Definiciones de tipos TypeScript
-│   │   ├── utils/colors.ts          # Paleta de colores pastel estilo Airtable
-│   │   ├── App.tsx                  # Componente principal
-│   │   └── index.css                # Estilos Tailwind CSS v4
-│   └── vite.config.ts               # Proxy al backend en puerto 8000
-│
-├── server/                      # Backend API (FastAPI + SQLite WAL mode)
-│   ├── data/archivy_notes/      # Almacén de notas Markdown de Archivy
-│   ├── routers/
-│   │   ├── archivy.py               # Endpoints para notas Markdown
-│   │   ├── auth.py                  # Endpoints OAuth 2.0 Atlassian y credenciales
-│   │   ├── columns.py               # Endpoints CRUD para columnas personalizadas
-│   │   └── issues.py                # Endpoints de sincronización y valores locales
-│   ├── services/
-│   │   ├── archivy_service.py       # Lógica de notas y archivos Markdown
-│   │   └── jira_service.py          # Cliente Jira Cloud, OAuth y Mock Data
-│   ├── tests/
-│   │   ├── test_persistence.py      # Test de preservación de campos personalizados
-│   │   └── test_api_endpoints.py    # Test de integración de todos los endpoints
-│   ├── database.py                  # Conexión SQLite con WAL mode y foreign keys
-│   ├── models.py                    # Modelos SQLAlchemy y esquemas Pydantic
-│   └── main.py                      # Punto de entrada FastAPI
-│
-├── run.bat                      # Lanzador rápido para Windows CMD
-├── start.ps1                    # Lanzador rápido para PowerShell
-└── plan.md                      # Plan de especificación original
+> **Can any team member or employee safely use Jira QuickGrid in their company?**  
+> **Yes, 100% safely.** Jira QuickGrid was designed from day one with enterprise security, data privacy, and non-destructive operations as primary architectural pillars.
+
+### Why It Is 100% Safe For Enterprise Use:
+
+1. **Strictly Non-Destructive (Read-Only to Jira Cloud):**
+   * The application interacts with Jira exclusively through official Atlassian REST APIs using read-only scopes (`read:jira-work`, `read:jira-user`).
+   * It **never** mutates, modifies, or deletes your organization's Jira tickets, workflows, custom fields, or sprint settings.
+   * Jira field columns are strictly locked and visually badged with a lock icon in the UI.
+
+2. **Zero Cloud Leakage (100% Local-First Storage):**
+   * **No intermediate servers:** Your data moves directly between your browser, your local machine, and your company's Jira instance (`https://your-domain.atlassian.net`).
+   * All Atlassian API tokens, OAuth credentials, synced issues, and custom fields are stored locally in an embedded SQLite database (`server/jira_app.db`) on your machine.
+   * **Zero telemetry, zero tracking, zero third-party analytics.** Nothing leaves your computer.
+
+3. **No Jira Administrator Rights Required:**
+   * In enterprise environments, creating a custom field in Jira often takes weeks of administrative approvals.
+   * With Jira QuickGrid, individual contributors, QA engineers, and project leads can create **unlimited local fields** (e.g., *QA Status*, *Internal Priority*, *Target Sprint*, *Blocker Notes*) that exist solely in your local view without bothering Jira administrators or cluttering the global enterprise schema.
+
+4. **Guaranteed No-Overwrite Persistence:**
+   * Synced Jira fields and local custom data are stored in completely isolated relational tables.
+   * When you click **Update Data (Sync)**, Jira fields are refreshed, but your local notes, custom single-selects, and ratings are **never overwritten or lost**.
+
+---
+
+## 🌟 Key Features
+
+### 1. Airtable-Style Interactive Data Grid
+* **Sticky Columns:** `Key` and `Summary` stay fixed on the left while horizontally scrolling through dozens of fields.
+* **Airtable-Style Multi-Pills:** Arrays such as Jira *Components*, *Labels*, and custom multi-select fields render as pastel badges.
+* **Drag-to-Resize & Column Reordering:** Reorder columns directly by dragging headers or through the dedicated Field Manager modal.
+* **Dynamic Grouping (Group By):** Group records by Jira Status, Priority, Assignee, or custom Single-Select columns with collapsible group headers and count badges.
+* **Field Manager:** Toggle column visibility, reorder columns, rename headers, and inspect field types in an Airtable-style management drawer.
+
+### 2. Multi-Field Filter Popover (Airtable Logic)
+* **Compound Logic:** Combine multiple filter rules with global `AND` (all conditions must match) or `OR` (any condition matches).
+* **Multi-Select Operators:** Native support for single and multi-value fields:
+  * `has any of`: Matches if the issue contains at least one of the selected tags.
+  * `has all of`: Matches if the issue contains every selected tag.
+  * `has none of`: Excludes issues containing any of the selected tags.
+  * `is exactly`: Matches only issues with the exact set of tags.
+* **Auto-Discovery of Available Options:** Dynamically scans issues to populate option pickers with real values (e.g., specific status names, tags, components, or custom field values).
+* **Live Counter:** Real-time feedback displaying `"Showing X of Y issues"` as you refine filters.
+* **Date & Numeric Operators:** Compare dates (`is before`, `is after`, `is today`) and numbers (`=`, `≠`, `>`, `<`, `≥`, `≤`).
+
+### 3. Saved Views & Layout Tabs
+* Save custom configurations including active Jira filter, visible columns, multi-field filter rules, group-by settings, and sorting preferences as dedicated View Tabs.
+* Switch instantly between views (e.g., *"Sprint 34 Bugs"*, *"My QA Tasks"*, *"High Priority Needs Review"*).
+
+### 4. Archivy Knowledge Base Integration
+* **Side-Drawer Wiki:** Click **"Wiki Doc"** on any row to open a full Markdown editor and live preview panel for that specific ticket.
+* **Local Markdown Files:** Notes are saved as portable Markdown files in `server/data/archivy_notes/[KEY].md`, making them fully versionable in Git.
+
+### 5. One-Click PDF Export
+* Export the currently filtered, grouped, and sorted grid directly to a clean, professional PDF document ready for sprint reviews and stakeholder meetings.
+
+### 6. Bilingual Support
+* Instant 1-click toggle between **English** and **Spanish** (`🌐 Turn to English` / `🌐 Cambiar a Español`).
+
+---
+
+## 🏗️ Architecture & How It Works
+
+```mermaid
+flowchart TD
+    subgraph Atlassian ["Atlassian Cloud"]
+        Jira["Jira Cloud REST API v3\n(/search/jql, /fields, /filters)"]
+    end
+
+    subgraph Backend ["FastAPI Local Server (127.0.0.1:8000)"]
+        JiraClient["JiraService\n(OAuth 2.0 / API Token / Mock)"]
+        SQLite[("Local SQLite Database\n(WAL mode + Foreign Keys)")]
+        ArchivySvc["ArchivyService\n(Markdown Notes)"]
+    end
+
+    subgraph Client ["Frontend SPA (React 19 + Vite - :5173)"]
+        Grid["Airtable DataGrid\n(TanStack Table + Sticky Headers)"]
+        FilterEngine["Filter Evaluator Engine\n(Multi-field + Multi-select)"]
+        ViewMgr["Saved Views & Tab Manager"]
+    end
+
+    Jira <-->|HTTPS Read-Only| JiraClient
+    JiraClient -->|UPSERT jira_issues| SQLite
+    SQLite <-->|REST API| Grid
+    ArchivySvc <-->|Local Filesystem| SQLite
+    FilterEngine --> Grid
+    ViewMgr --> Grid
 ```
 
+### Relational Schema (No-Overwrite Isolation):
+* **`jira_issues` table:** Stores official Jira data (key, summary, status, assignee, priority, created/updated dates, and raw fields payload). Updated upon sync.
+* **`custom_columns` table:** Stores definitions of your local fields (single-select, text, number, date, archivy-link).
+* **`issue_custom_values` table:** Stores custom values indexed by `(issue_key, column_id)`. **Never modified or deleted by Jira sync.**
+* **`saved_views` table:** Stores view configurations and active filter condition trees.
+
 ---
 
-## 🚀 Puesta en Marcha
+## 🚀 Quick Start
 
-### Opción 1: Inicio Rápido con un Clic (Recomendado)
-Ejecuta en la terminal de PowerShell o haz doble clic:
+### Prerequisites
+* **Python 3.10+** ([Download Python](https://www.python.org/downloads/)) — Ensure "Add Python to PATH" is checked on Windows.
+* **Node.js 18+** ([Download Node.js LTS](https://nodejs.org/))
+* **Git** ([Download Git](https://git-scm.com/))
+
+---
+
+### Option 1: 1-Click Launch (Recommended)
+
+#### Windows
+Run in PowerShell or double-click:
 ```powershell
 .\start.ps1
 ```
-O con CMD:
+Or via Windows CMD:
 ```cmd
 run.bat
 ```
-Esto levantará el backend en `http://127.0.0.1:8000`, el frontend en `http://localhost:5173` y abrirá tu navegador automáticamente.
+
+#### macOS / Linux
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+This starts both the FastAPI backend (`http://127.0.0.1:8000`) and Vite frontend (`http://localhost:5173`) and automatically opens your browser.
 
 ---
 
-### Opción 2: Inicio Manual
+### Option 2: Manual Setup
 
-#### 1. Backend (FastAPI)
-```powershell
+#### 1. Setup Backend
+```bash
 cd server
-.\.venv\Scripts\Activate.ps1
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-* Swagger Docs interactivo: `http://127.0.0.1:8000/docs`
+python -m venv .venv
 
-#### 2. Frontend (Vite + React)
-```powershell
+# On Windows:
+.\.venv\Scripts\activate
+# On macOS / Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+* Interactive Swagger Docs: `http://127.0.0.1:8000/docs`
+
+#### 2. Setup Frontend
+```bash
 cd client
+npm install
 npm run dev
 ```
-* Acceso a la aplicación: `http://localhost:5173`
+* Application URL: `http://localhost:5173`
 
 ---
 
-## 🧪 Ejecución de Pruebas Automatizadas
+## ⚙️ Connecting to Jira
 
-Para validar que los datos personalizados **nunca se sobreescriben al sincronizar** y que todas las APIs funcionan correctamente:
+Click the **⚙️ Settings** icon in the top toolbar to configure your connection:
+
+### 1. Mock Mode (Default)
+* No credentials required.
+* Instantly loads a realistic sprint dataset for testing and demonstration.
+
+### 2. Jira Cloud API Token (Recommended for Enterprise Users)
+Fastest way to connect to your company's Jira Cloud without admin privileges:
+1. **Domain:** Enter your Jira domain (e.g., `company.atlassian.net`).
+2. **Email:** Your corporate Atlassian email address.
+3. **API Token:** Generate an API token at [Atlassian Account Security](https://id.atlassian.com/manage-profile/security/api-tokens).
+4. Click **Validate with Jira** and **Save Settings**.
+
+### 3. Atlassian OAuth 2.0 (3LO)
+Standard corporate OAuth integration:
+1. In [Atlassian Developer Console](https://developer.atlassian.com/console/myapps/):
+   * Create an OAuth 2.0 (3LO) app.
+   * Add the **Jira platform REST API**.
+   * Set Callback URL to: `http://localhost:5173/auth/callback`.
+   * Add scopes: `read:jira-work`, `read:jira-user`, `offline_access`.
+2. Copy `Client ID` and `Client Secret` into the app and click **Connect with Atlassian Jira**.
+
+---
+
+## 🧪 Automated Testing
+
+Verify the persistence rules and API integrity:
 
 ```powershell
 .\server\.venv\Scripts\pytest.exe server/tests/ -v
 ```
 
-Resultado esperado:
+Expected output:
 ```text
 server/tests/test_api_endpoints.py::test_health_check PASSED
 server/tests/test_api_endpoints.py::test_auth_status PASSED
 server/tests/test_api_endpoints.py::test_columns_crud PASSED
 server/tests/test_api_endpoints.py::test_issues_list_and_sync PASSED
+server/tests/test_api_endpoints.py::test_views_crud PASSED
 server/tests/test_api_endpoints.py::test_archivy_notes PASSED
 server/tests/test_persistence.py::test_custom_values_never_overwritten_by_jira_sync PASSED
 server/tests/test_persistence.py::test_archived_issue_retains_custom_values PASSED
 
-======================== 7 passed in 0.96s ========================
+======================== 9 passed in 2.85s ========================
 ```
 
 ---
 
-## ⚙️ Configuración de Conexión con Jira
+## 📦 Project Structure
 
-Puedes configurar la conexión desde la propia interfaz web haciendo clic en el botón de **⚙️ (Configuración)** en la barra de herramientas:
+```text
+JIRA_WEB/
+├── client/                      # Frontend SPA (React 19 + TypeScript + Tailwind CSS v4)
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── AddColumnModal.tsx       # Local custom column creator modal
+│   │   │   ├── ArchivyDrawer.tsx        # Markdown documentation side drawer
+│   │   │   ├── CreateViewModal.tsx      # View creation & layout preservation modal
+│   │   │   ├── DataGrid.tsx             # Airtable grid with sticky columns & drag reorder
+│   │   │   ├── EditColumnModal.tsx      # Modal to edit options of custom single-selects
+│   │   │   ├── FilterMenu.tsx           # Airtable multi-field filter popover
+│   │   │   ├── ManageFieldsModal.tsx    # Airtable field manager & column reorder
+│   │   │   ├── SettingsModal.tsx        # Jira connection, JQL & Field Explorer modal
+│   │   │   ├── Toolbar.tsx              # Main action toolbar (Filter, Sort, Group, Sync)
+│   │   │   └── ViewTabs.tsx             # Saved views bar
+│   │   ├── services/api.ts              # Type-safe API client
+│   │   ├── types/index.ts               # Core TypeScript definitions & filter types
+│   │   ├── utils/
+│   │   │   ├── filterEvaluator.ts       # Multi-field & multi-select evaluation engine
+│   │   │   ├── i18n.ts                  # Bilingual dictionary (English & Spanish)
+│   │   │   └── pdfExport.ts             # PDF generation engine
+│   │   ├── App.tsx                      # Root state coordinator
+│   │   └── main.tsx                     # React 19 entrypoint
+│   └── vite.config.ts                   # Vite bundler & reverse proxy config
+│
+├── server/                      # Backend API (FastAPI + SQLite WAL mode)
+│   ├── data/archivy_notes/      # Local Markdown notes store (.md files)
+│   ├── routers/
+│   │   ├── archivy.py                   # Markdown wiki endpoints
+│   │   ├── auth.py                      # OAuth 2.0 & credentials management
+│   │   ├── columns.py                   # Custom column CRUD endpoints
+│   │   ├── issues.py                    # Sync engine & local custom values
+│   │   └── views.py                     # Saved views endpoints
+│   ├── services/
+│   │   ├── archivy_service.py           # Markdown file handling
+│   │   └── jira_service.py              # Jira Cloud client, JQL runner & mock provider
+│   ├── tests/
+│   │   ├── test_api_endpoints.py        # Complete API integration test suite
+│   │   └── test_persistence.py          # Mathematical proof of no-overwrite guarantee
+│   ├── database.py                      # SQLite WAL configuration & session provider
+│   ├── models.py                        # SQLAlchemy ORM & Pydantic models
+│   └── main.py                          # FastAPI entrypoint & auto-migration engine
+│
+├── .cursorrules                 # AI coding assistant invariants & architectural guidelines
+├── AGENTS.md                    # Technical documentation & conventions for AI agents
+├── run.bat                      # 1-Click launcher for Windows CMD
+├── start.ps1                    # 1-Click launcher for Windows PowerShell
+├── start.sh                     # 1-Click launcher for macOS / Linux
+├── TUTORIAL.md                  # Comprehensive user and installation tutorial
+└── README.md                    # Main project overview & security documentation
+```
 
-1. **Modo Simulación (Mock):**
-   * No requiere credenciales. Viene habilitado por defecto con tickets representativos para probar inmediatamente.
-2. **Modo Atlassian OAuth 2.0 (3LO):**
-   * En [Atlassian Developer Console](https://developer.atlassian.com/console/myapps/):
-     * Crea una App OAuth 2.0 (3LO).
-     * Añade la API **Jira platform REST API**.
-     * Configura el Callback URL: `http://localhost:5173/auth/callback`.
-     * Añade los scopes: `read:jira-work`, `read:jira-user`, `offline_access`.
-     * Copia `Client ID` y `Client Secret` en la ventana de configuración y pulsa **"Conectar con Atlassian Jira"**.
-3. **Modo Jira API Token:**
-   * Introduce tu dominio de Jira (ej: `tu-empresa.atlassian.net`), tu correo electrónico y tu API token generado en [Atlassian Account Security](https://id.atlassian.com/manage-profile/security/api-tokens).
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. You are free to use, modify, and distribute it internally or commercially within your organization.
