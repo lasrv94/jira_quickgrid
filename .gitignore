@@ -38,3 +38,11 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Local agent instructions and development notes
+/AGENTS.md
+/.cursorrules
+/plan.md
+/client/README.md
+/.agents/
+/.codex/

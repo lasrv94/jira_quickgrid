@@ -1,6 +1,6 @@
 # 📘 Installation & User Manual: Jira QuickGrid
 
-Welcome to **Jira QuickGrid**. This guide explains step-by-step how to install, configure, use, and share this application so that any team member in your organization can use it smoothly.
+Welcome to **Jira QuickGrid**. This guide explains step-by-step how to install, configure, use this application on your own workstation. For a short introduction, see the [README](README.md); for deployment and credential limits, see the [security guide](SECURITY.md).
 
 ---
 
