@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   Edit2,
   ExternalLink,
   GripVertical,
@@ -201,6 +202,101 @@ const SelectDropdown: React.FC<SelectDropdownProps> = ({
   );
 };
 
+// ----------------- CLIPBOARD & AIRTABLE-STYLE COPY HELPERS -----------------
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below
+    }
+  }
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch {
+    return false;
+  }
+}
+
+function getCellValueAsText(
+  issue: JiraIssue,
+  colId: string,
+  columns: CustomColumn[]
+): string {
+  if (colId === 'key') return issue.key || '';
+  if (colId === 'summary') return issue.summary || '';
+  if (colId === 'status') return issue.jira_status || '';
+  if (colId === 'priority') return issue.priority || '';
+  if (colId === 'assignee') return issue.assignee_name || '';
+
+  const col = columns.find((c) => c.id === colId);
+  const rawCustom = issue.custom_values?.[colId];
+
+  if (!col) {
+    return rawCustom !== undefined && rawCustom !== null ? String(rawCustom) : '';
+  }
+
+  if (col.type === 'archivy_link') {
+    return issue.key;
+  }
+
+  if (col.type === 'single_select') {
+    const opt = col.options?.find((o) => o.id === rawCustom);
+    return opt ? opt.label : rawCustom ? String(rawCustom) : '';
+  }
+
+  if (col.type === 'formula') {
+    const result = evaluateFormula(col.formula, issue, columns);
+    return result !== null && result !== undefined ? String(result) : '';
+  }
+
+  if (col.type === 'jira_field' || col.jira_field_key) {
+    const fieldKey = col.jira_field_key || col.id;
+    const jiraVal = issue.raw_jira_fields?.[fieldKey];
+    if (jiraVal === null || jiraVal === undefined) return '';
+    if (typeof jiraVal === 'string' || typeof jiraVal === 'number' || typeof jiraVal === 'boolean') {
+      return String(jiraVal);
+    }
+    if (Array.isArray(jiraVal)) {
+      return jiraVal
+        .map((item) =>
+          typeof item === 'object' && item ? item.name || item.value || item.displayName || '' : String(item)
+        )
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof jiraVal === 'object') {
+      if (jiraVal.displayName) return jiraVal.displayName;
+      if (jiraVal.name) return jiraVal.name;
+      if (jiraVal.value) return jiraVal.value;
+      if (jiraVal.type === 'doc' && Array.isArray(jiraVal.content)) {
+        const extractText = (node: any): string => {
+          if (!node) return '';
+          if (node.text) return node.text;
+          if (Array.isArray(node.content)) return node.content.map(extractText).join(' ');
+          return '';
+        };
+        return extractText(jiraVal).trim();
+      }
+      return JSON.stringify(jiraVal);
+    }
+    return String(jiraVal);
+  }
+
+  return rawCustom !== null && rawCustom !== undefined ? String(rawCustom) : '';
+}
+
 // ----------------- MAIN DATAGRID COMPONENT -----------------
 
 interface Props {
@@ -240,6 +336,34 @@ export const DataGrid: React.FC<Props> = ({
 
   // Active dropdown open (for single_select)
   const [activeDropdown, setActiveDropdown] = useState<{ issueKey: string; colId: string } | null>(null);
+
+  // Airtable-style cell selection and copy state
+  const [selectedCell, setSelectedCell] = useState<{ issueKey: string; colId: string } | null>(null);
+  const [copiedCell, setCopiedCell] = useState<{ issueKey: string; colId: string } | null>(null);
+  const [copyToast, setCopyToast] = useState<{ text: string } | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleCopyCell = useCallback(
+    (issueKey: string, colId: string) => {
+      const issue = issues.find((i) => i.key === issueKey);
+      if (!issue) return;
+      const textToCopy = getCellValueAsText(issue, colId, columns);
+
+      copyTextToClipboard(textToCopy).then(() => {
+        setCopiedCell({ issueKey, colId });
+        setCopyToast({
+          text: textToCopy.length > 45 ? `${textToCopy.substring(0, 42)}...` : textToCopy,
+        });
+
+        if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = setTimeout(() => {
+          setCopiedCell(null);
+          setCopyToast(null);
+        }, 2000);
+      });
+    },
+    [issues, columns]
+  );
 
   // Column Widths State (allows mouse dragging to expand / shrink columns)
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
@@ -341,6 +465,98 @@ export const DataGrid: React.FC<Props> = ({
   const toggleGroup = (groupKey: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
   };
+
+  // Airtable-style Keyboard Navigation & Copy Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // If user is currently typing in an input or textarea, let default browser behavior handle it
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (!selectedCell) return;
+
+      // 1. Copy: Ctrl+C or Cmd+C
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        handleCopyCell(selectedCell.issueKey, selectedCell.colId);
+        return;
+      }
+
+      // 2. Deselect: Escape
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSelectedCell(null);
+        return;
+      }
+
+      // 3. Edit: Enter or F2
+      if (e.key === 'Enter' || e.key === 'F2') {
+        const col = columns.find((c) => c.id === selectedCell.colId);
+        const issue = issues.find((i) => i.key === selectedCell.issueKey);
+        if (col && issue) {
+          e.preventDefault();
+          if (col.type === 'single_select') {
+            setActiveDropdown({ issueKey: selectedCell.issueKey, colId: selectedCell.colId });
+          } else if (col.type === 'formula') {
+            onOpenEditColumn?.(col);
+          } else if (col.type !== 'jira_field' && col.type !== 'archivy_link') {
+            const val = issue.custom_values?.[col.id];
+            setEditingCell({
+              issueKey: selectedCell.issueKey,
+              colId: selectedCell.colId,
+              initialVal: val !== null && val !== undefined ? String(val) : '',
+            });
+          }
+        }
+        return;
+      }
+
+      // 4. Arrow navigation (Airtable-style keyboard navigation)
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        const allCols = ['key', 'summary', 'status', 'priority', 'assignee', ...visibleCustomColumns.map((c) => c.id)];
+        const currentColIdx = allCols.indexOf(selectedCell.colId);
+        if (currentColIdx === -1) return;
+
+        // Flatten visible issues across active groups
+        const visibleIssues = groupedData.flatMap((g) => (collapsedGroups[g.groupKey] ? [] : g.items));
+        const currentIssueIdx = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
+        if (currentIssueIdx === -1) return;
+
+        let nextColIdx = currentColIdx;
+        let nextIssueIdx = currentIssueIdx;
+
+        if (e.key === 'ArrowLeft') nextColIdx = Math.max(0, currentColIdx - 1);
+        if (e.key === 'ArrowRight') nextColIdx = Math.min(allCols.length - 1, currentColIdx + 1);
+        if (e.key === 'ArrowUp') nextIssueIdx = Math.max(0, currentIssueIdx - 1);
+        if (e.key === 'ArrowDown') nextIssueIdx = Math.min(visibleIssues.length - 1, currentIssueIdx + 1);
+
+        const nextIssue = visibleIssues[nextIssueIdx];
+        const nextColId = allCols[nextColIdx];
+        if (nextIssue && nextColId) {
+          setSelectedCell({ issueKey: nextIssue.key, colId: nextColId });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    selectedCell,
+    handleCopyCell,
+    columns,
+    issues,
+    visibleCustomColumns,
+    groupedData,
+    collapsedGroups,
+    onOpenEditColumn,
+  ]);
 
   const getPriorityBadge = (priority: string) => {
     switch (priority.toLowerCase()) {
@@ -816,73 +1032,224 @@ export const DataGrid: React.FC<Props> = ({
                       </td>
 
                       {/* Key */}
-                      <td className="px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap">
-                        <a
-                          href={
-                            jiraDomain
-                              ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/browse/${issue.key}`
-                              : '#'
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            if (!jiraDomain) {
-                              e.preventDefault();
-                              alert(lang === 'es' ? 'Configura tu dominio Jira en Ajustes (⚙️) para abrir tickets.' : 'Configure your Jira domain in Settings (⚙️) to open tickets.');
+                      <td
+                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'key' })}
+                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap cursor-pointer transition-all ${
+                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'key'
+                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
+                            : ''
+                        } ${
+                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'key'
+                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
+                            : ''
+                        }`}
+                        title={
+                          lang === 'es'
+                            ? `${issue.key} (Clic para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.key} (Click to select, Ctrl+C to copy)`
+                        }
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <a
+                            href={
+                              jiraDomain
+                                ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/browse/${issue.key}`
+                                : '#'
                             }
-                          }}
-                          className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 group/key"
-                          title={jiraDomain ? `${t.open_in_jira} (${issue.key})` : issue.key}
-                        >
-                          <span>{issue.key}</span>
-                          <ExternalLink className="w-3 h-3 opacity-0 group-hover/key:opacity-100 transition-opacity text-blue-500" />
-                        </a>
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => {
+                              if (!jiraDomain) {
+                                e.preventDefault();
+                                alert(
+                                  lang === 'es'
+                                    ? 'Configura tu dominio Jira en Ajustes (⚙️) para abrir tickets.'
+                                    : 'Configure your Jira domain in Settings (⚙️) to open tickets.'
+                                );
+                              }
+                            }}
+                            className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 group/key"
+                            title={jiraDomain ? `${t.open_in_jira} (${issue.key})` : issue.key}
+                          >
+                            <span>{issue.key}</span>
+                            <ExternalLink className="w-3 h-3 opacity-0 group-hover/key:opacity-100 transition-opacity text-blue-500" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyCell(issue.key, 'key');
+                            }}
+                            title={lang === 'es' ? 'Copiar clave (Ctrl+C)' : 'Copy key (Ctrl+C)'}
+                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Summary */}
-                      <td className="px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900">
-                        <span title={issue.summary}>{issue.summary}</span>
+                      <td
+                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'summary' })}
+                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${
+                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'summary'
+                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
+                            : ''
+                        } ${
+                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'summary'
+                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
+                            : ''
+                        }`}
+                        title={
+                          lang === 'es'
+                            ? `${issue.summary} (Clic para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.summary} (Click to select, Ctrl+C to copy)`
+                        }
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="truncate" title={issue.summary}>
+                            {issue.summary}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyCell(issue.key, 'summary');
+                            }}
+                            title={lang === 'es' ? 'Copiar resumen (Ctrl+C)' : 'Copy summary (Ctrl+C)'}
+                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Jira Status */}
-                      <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-0.5 text-[11px] font-medium rounded-full border ${getStatusBadge(
-                            issue.jira_status_category
-                          )}`}
-                        >
-                          {issue.jira_status}
-                        </span>
+                      <td
+                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'status' })}
+                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${
+                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'status'
+                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
+                            : ''
+                        } ${
+                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'status'
+                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
+                            : ''
+                        }`}
+                        title={
+                          lang === 'es'
+                            ? `${issue.jira_status} (Clic para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.jira_status} (Click to select, Ctrl+C to copy)`
+                        }
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span
+                            className={`px-2 py-0.5 text-[11px] font-medium rounded-full border ${getStatusBadge(
+                              issue.jira_status_category
+                            )}`}
+                          >
+                            {issue.jira_status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyCell(issue.key, 'status');
+                            }}
+                            title={lang === 'es' ? 'Copiar estado (Ctrl+C)' : 'Copy status (Ctrl+C)'}
+                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Priority */}
-                      <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${getPriorityBadge(
-                            issue.priority
-                          )}`}
-                        >
-                          {issue.priority}
-                        </span>
+                      <td
+                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'priority' })}
+                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${
+                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'priority'
+                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
+                            : ''
+                        } ${
+                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'priority'
+                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
+                            : ''
+                        }`}
+                        title={
+                          lang === 'es'
+                            ? `${issue.priority} (Clic para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.priority} (Click to select, Ctrl+C to copy)`
+                        }
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span
+                            className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${getPriorityBadge(
+                              issue.priority
+                            )}`}
+                          >
+                            {issue.priority}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyCell(issue.key, 'priority');
+                            }}
+                            title={lang === 'es' ? 'Copiar prioridad (Ctrl+C)' : 'Copy priority (Ctrl+C)'}
+                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Assignee */}
-                      <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          {issue.assignee_avatar ? (
-                            <img
-                              src={issue.assignee_avatar}
-                              alt={issue.assignee_name || ''}
-                              className="w-5 h-5 rounded-full object-cover border border-gray-200"
-                            />
-                          ) : (
-                            <div className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-[10px] font-bold">
-                              {issue.assignee_name ? issue.assignee_name[0] : '?'}
-                            </div>
-                          )}
-                          <span className="text-gray-700 truncate max-w-[100px]">
-                            {issue.assignee_name || t.unassigned}
-                          </span>
+                      <td
+                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'assignee' })}
+                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${
+                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'assignee'
+                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
+                            : ''
+                        } ${
+                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'assignee'
+                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
+                            : ''
+                        }`}
+                        title={
+                          lang === 'es'
+                            ? `${issue.assignee_name || t.unassigned} (Clic para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.assignee_name || t.unassigned} (Click to select, Ctrl+C to copy)`
+                        }
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5 truncate">
+                            {issue.assignee_avatar ? (
+                              <img
+                                src={issue.assignee_avatar}
+                                alt={issue.assignee_name || ''}
+                                className="w-5 h-5 rounded-full object-cover border border-gray-200"
+                              />
+                            ) : (
+                              <div className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-[10px] font-bold">
+                                {issue.assignee_name ? issue.assignee_name[0] : '?'}
+                              </div>
+                            )}
+                            <span className="text-gray-700 truncate max-w-[100px]">
+                              {issue.assignee_name || t.unassigned}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyCell(issue.key, 'assignee');
+                            }}
+                            title={lang === 'es' ? 'Copiar asignado (Ctrl+C)' : 'Copy assignee (Ctrl+C)'}
+                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
                         </div>
                       </td>
 
@@ -891,18 +1258,39 @@ export const DataGrid: React.FC<Props> = ({
                         const rawCustomValue = issue.custom_values?.[col.id];
                         const isCurrentlyEditing =
                           editingCell?.issueKey === issue.key && editingCell?.colId === col.id;
+                        const isSelected = selectedCell?.issueKey === issue.key && selectedCell?.colId === col.id;
+                        const isCopied = copiedCell?.issueKey === issue.key && copiedCell?.colId === col.id;
 
                         // 1. Archivy Wiki Link Cell
                         if (col.type === 'archivy_link') {
                           return (
-                            <td key={col.id} className="px-3 py-1.5 border-r border-gray-100">
-                              <button
-                                onClick={() => onOpenArchivyDrawer(issue)}
-                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors shadow-2xs cursor-pointer"
-                              >
-                                <BookOpen className="w-3 h-3 text-purple-600" />
-                                <span>Wiki Doc</span>
-                              </button>
+                            <td
+                              key={col.id}
+                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
+                              className={`px-3 py-1.5 border-r border-gray-100 cursor-pointer transition-all ${
+                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
+                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <button
+                                  onClick={() => onOpenArchivyDrawer(issue)}
+                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors shadow-2xs cursor-pointer"
+                                >
+                                  <BookOpen className="w-3 h-3 text-purple-600" />
+                                  <span>Wiki Doc</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyCell(issue.key, col.id);
+                                  }}
+                                  title={lang === 'es' ? 'Copiar clave del ticket (Ctrl+C)' : 'Copy issue key (Ctrl+C)'}
+                                  className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
                             </td>
                           );
                         }
@@ -916,29 +1304,28 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40"
+                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
+                              className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${
+                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
+                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
                               title={
                                 lang === 'es'
-                                  ? 'Clic o doble clic para seleccionar opción'
-                                  : 'Click or double click to select option'
+                                  ? `${currentOpt ? currentOpt.label : 'Sin opción'} (Clic para seleccionar, Ctrl+C para copiar, doble clic para elegir)`
+                                  : `${currentOpt ? currentOpt.label : 'No option'} (Click to select, Ctrl+C to copy, double click to choose)`
                               }
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
                                 setActiveDropdown({ issueKey: issue.key, colId: col.id });
                               }}
                             >
-                              <div
-                                className="flex items-center justify-between min-h-[22px] gap-1.5 cursor-pointer"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveDropdown(isDropdownOpen ? null : { issueKey: issue.key, colId: col.id });
-                                }}
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveDropdown({ issueKey: issue.key, colId: col.id });
-                                }}
-                              >
-                                <div className="inline-flex items-center gap-1.5 py-0.5 truncate flex-1">
+                              <div className="flex items-center justify-between min-h-[22px] gap-1.5">
+                                <div
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveDropdown({ issueKey: issue.key, colId: col.id });
+                                  }}
+                                  className="inline-flex items-center gap-1.5 py-0.5 truncate flex-1"
+                                >
                                   {currentOpt ? (
                                     <span
                                       className={`px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs ${getColorClasses(
@@ -953,17 +1340,30 @@ export const DataGrid: React.FC<Props> = ({
                                     </span>
                                   )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveDropdown({ issueKey: issue.key, colId: col.id });
-                                  }}
-                                  className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-colors cursor-pointer shrink-0"
-                                  title={lang === 'es' ? 'Seleccionar opción' : 'Select option'}
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(issue.key, col.id);
+                                    }}
+                                    className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Copiar opción (Ctrl+C)' : 'Copy option (Ctrl+C)'}
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveDropdown({ issueKey: issue.key, colId: col.id });
+                                    }}
+                                    className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-colors cursor-pointer"
+                                    title={lang === 'es' ? 'Seleccionar opción' : 'Select option'}
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
 
                               {isDropdownOpen && (
@@ -989,13 +1389,29 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              className="px-3 py-1.5 border-r border-gray-100 max-w-[280px] bg-slate-50/20 text-gray-800"
-                              title={`Jira (${fieldKey}) - Solo lectura`}
+                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
+                              className={`px-3 py-1.5 border-r border-gray-100 max-w-[280px] bg-slate-50/20 text-gray-800 cursor-pointer group/cell transition-all ${
+                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
+                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                              title={`Jira (${fieldKey}) - Clic para seleccionar, Ctrl+C para copiar`}
                             >
-                              <div className="truncate">
-                                {isComponentField
-                                  ? renderComponentPills(jiraRawVal)
-                                  : renderJiraFieldValue(jiraRawVal, fieldKey)}
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="truncate flex-1">
+                                  {isComponentField
+                                    ? renderComponentPills(jiraRawVal)
+                                    : renderJiraFieldValue(jiraRawVal, fieldKey)}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyCell(issue.key, col.id);
+                                  }}
+                                  className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer shrink-0"
+                                  title={lang === 'es' ? 'Copiar valor (Ctrl+C)' : 'Copy value (Ctrl+C)'}
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
                               </div>
                             </td>
                           );
@@ -1011,16 +1427,21 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              className="px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800 cursor-pointer hover:bg-indigo-50/40"
+                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
+                              className={`px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800 cursor-pointer hover:bg-indigo-50/40 group/cell transition-all ${
+                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
+                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
                               title={
                                 col.formula
                                   ? `${col.name} = ${col.formula}\nResultado: ${result ?? '(vacío)'}\n(${
-                                      lang === 'es' ? 'Doble clic para editar fórmula' : 'Double click to edit formula'
+                                      lang === 'es'
+                                        ? 'Clic para seleccionar, Ctrl+C para copiar, doble clic para editar fórmula'
+                                        : 'Click to select, Ctrl+C to copy, double click to edit formula'
                                     })`
                                   : `${col.name} (${
                                       lang === 'es'
-                                        ? 'Doble clic para configurar fórmula'
-                                        : 'Double click to configure formula'
+                                        ? 'Clic para seleccionar, Ctrl+C para copiar, doble clic para configurar'
+                                        : 'Click to select, Ctrl+C to copy, double click to configure'
                                     })`
                               }
                               onDoubleClick={(e) => {
@@ -1030,26 +1451,39 @@ export const DataGrid: React.FC<Props> = ({
                                 }
                               }}
                             >
-                              <div className="flex items-center min-h-[22px] truncate">
-                                {isError ? (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-100 text-rose-700 rounded border border-rose-200">
-                                    #ERROR!
-                                  </span>
-                                ) : isOne ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
-                                    1
-                                  </span>
-                                ) : isZero ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
-                                    0
-                                  </span>
-                                ) : result !== null && result !== undefined && String(result) !== '' ? (
-                                  <span className="text-xs font-medium text-gray-900 truncate">
-                                    {String(result)}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-300 italic text-xs">-</span>
-                                )}
+                              <div className="flex items-center justify-between min-h-[22px] gap-1 truncate">
+                                <div className="truncate flex-1">
+                                  {isError ? (
+                                    <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-100 text-rose-700 rounded border border-rose-200">
+                                      #ERROR!
+                                    </span>
+                                  ) : isOne ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                      1
+                                    </span>
+                                  ) : isZero ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                                      0
+                                    </span>
+                                  ) : result !== null && result !== undefined && String(result) !== '' ? (
+                                    <span className="text-xs font-medium text-gray-900 truncate">
+                                      {String(result)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-300 italic text-xs">-</span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyCell(issue.key, col.id);
+                                  }}
+                                  className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer shrink-0"
+                                  title={lang === 'es' ? 'Copiar resultado (Ctrl+C)' : 'Copy result (Ctrl+C)'}
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
                               </div>
                             </td>
                           );
@@ -1062,11 +1496,14 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
-                            className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-text"
+                            onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
+                            className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${
+                              isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
+                            } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
                             title={
                               lang === 'es'
-                                ? 'Doble clic o clic en lápiz para editar'
-                                : 'Double click or click pencil to edit'
+                                ? 'Clic para seleccionar (Ctrl+C copiar), doble clic o lápiz para editar'
+                                : 'Click to select (Ctrl+C to copy), double click or pencil to edit'
                             }
                             onDoubleClick={(e) => {
                               e.stopPropagation();
@@ -1099,17 +1536,7 @@ export const DataGrid: React.FC<Props> = ({
                                   });
                                 }}
                               >
-                                <span
-                                  className="truncate text-gray-800 cursor-pointer flex-1"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingCell({
-                                      issueKey: issue.key,
-                                      colId: col.id,
-                                      initialVal: displayVal,
-                                    });
-                                  }}
-                                >
+                                <span className="truncate text-gray-800 flex-1">
                                   {displayVal !== '' ? (
                                     <span>{displayVal}</span>
                                   ) : (
@@ -1118,21 +1545,34 @@ export const DataGrid: React.FC<Props> = ({
                                     </span>
                                   )}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingCell({
-                                      issueKey: issue.key,
-                                      colId: col.id,
-                                      initialVal: displayVal,
-                                    });
-                                  }}
-                                  className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-colors cursor-pointer shrink-0"
-                                  title="Editar campo"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(issue.key, col.id);
+                                    }}
+                                    className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Copiar texto (Ctrl+C)' : 'Copy text (Ctrl+C)'}
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingCell({
+                                        issueKey: issue.key,
+                                        colId: col.id,
+                                        initialVal: displayVal,
+                                      });
+                                    }}
+                                    className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-colors cursor-pointer"
+                                    title="Editar campo"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </td>
@@ -1148,6 +1588,18 @@ export const DataGrid: React.FC<Props> = ({
           })}
         </tbody>
       </table>
+
+      {/* Airtable-style Floating Copy Toast */}
+      {copyToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-gray-900/95 text-white text-xs font-medium rounded-full shadow-2xl border border-gray-700 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
+          <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span>{lang === 'es' ? 'Copiado al portapapeles:' : 'Copied to clipboard:'}</span>
+          <span className="font-semibold text-emerald-300 max-w-[200px] truncate">
+            {copyToast.text ? `"${copyToast.text}"` : lang === 'es' ? '(vacío)' : '(empty)'}
+          </span>
+          <span className="text-[10px] text-gray-400 border-l border-gray-700 pl-2">Ctrl+C</span>
+        </div>
+      )}
     </div>
   );
 };
