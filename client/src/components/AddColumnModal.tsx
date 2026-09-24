@@ -92,7 +92,7 @@ export const AddColumnModal: React.FC<Props> = ({
         await onAddColumn({
           name: name.trim(),
           type,
-          options: type === 'single_select' ? options : [],
+          options: type === 'single_select' || type === 'formula' ? options : [],
           formula: type === 'formula' ? formula.trim() : undefined,
           is_visible: true,
           width: type === 'long_text' ? 240 : type === 'formula' ? 140 : 170,
@@ -315,6 +315,8 @@ export const AddColumnModal: React.FC<Props> = ({
                 <FormulaEditor
                   formula={formula}
                   onChangeFormula={setFormula}
+                  options={options}
+                  onChangeOptions={setOptions}
                   existingColumns={existingColumns}
                   lang={lang}
                 />
