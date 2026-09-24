@@ -209,6 +209,7 @@ interface Props {
   onUpdateCustomValue: (issueKey: string, columnId: string, value: any) => Promise<void>;
   onOpenArchivyDrawer: (issue: JiraIssue) => void;
   onOpenAddColumn: () => void;
+  onOpenEditColumn?: (col: CustomColumn) => void;
   onDeleteColumn: (colId: string) => Promise<void>;
   onUpdateColumnWidth?: (colId: string, width: number) => Promise<void>;
   onReorderColumns?: (reorderedCols: CustomColumn[]) => Promise<void>;
@@ -223,6 +224,7 @@ export const DataGrid: React.FC<Props> = ({
   onUpdateCustomValue,
   onOpenArchivyDrawer,
   onOpenAddColumn,
+  onOpenEditColumn,
   onDeleteColumn,
   onUpdateColumnWidth,
   onReorderColumns,
@@ -676,11 +678,25 @@ export const DataGrid: React.FC<Props> = ({
                     setDraggingColId(null);
                     setDragOverColId(null);
                   }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (!isJira && onOpenEditColumn) {
+                      onOpenEditColumn(col);
+                    }
+                  }}
                   style={{ width: currentW, minWidth: 90 }}
                   className={`px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] group relative select-none cursor-grab active:cursor-grabbing transition-all ${
                     isOverThis ? 'border-l-4 border-l-blue-600 bg-blue-50/80 shadow-inner' : ''
                   } ${isDraggingThis ? 'opacity-40' : ''}`}
-                  title={`${col.name} (Arrastrar para mover posición)`}
+                  title={
+                    isJira
+                      ? `${col.name} (Jira - Solo lectura)`
+                      : `${col.name} (${
+                          lang === 'es'
+                            ? 'Doble clic para editar campo, arrastrar para mover'
+                            : 'Double click to edit field, drag to reorder'
+                        })`
+                  }
                 >
                   <div className="flex items-center justify-between gap-1 pr-1">
                     <div className="flex items-center gap-1.5 truncate">
@@ -704,18 +720,34 @@ export const DataGrid: React.FC<Props> = ({
                       </span>
                     </div>
                     {!isJira && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (window.confirm(t.remove_column_confirm)) {
-                            onDeleteColumn(col.id);
-                          }
-                        }}
-                        title={t.remove_column}
-                        className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-500 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        {onOpenEditColumn && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenEditColumn(col);
+                            }}
+                            title={lang === 'es' ? 'Editar campo' : 'Edit field'}
+                            className="text-gray-400 hover:text-blue-600 p-0.5 rounded transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(t.remove_column_confirm)) {
+                              onDeleteColumn(col.id);
+                            }
+                          }}
+                          title={t.remove_column}
+                          className="text-gray-400 hover:text-rose-500 p-0.5 rounded transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     )}
                   </div>
                   {/* Column Resize Handle */}
@@ -885,20 +917,28 @@ export const DataGrid: React.FC<Props> = ({
                             <td
                               key={col.id}
                               className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40"
-                              title="Clic en lápiz o doble clic para seleccionar"
+                              title={
+                                lang === 'es'
+                                  ? 'Clic o doble clic para seleccionar opción'
+                                  : 'Click or double click to select option'
+                              }
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
                                 setActiveDropdown({ issueKey: issue.key, colId: col.id });
                               }}
                             >
-                              <div className="flex items-center justify-between min-h-[22px] gap-1.5">
-                                <div
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveDropdown(isDropdownOpen ? null : { issueKey: issue.key, colId: col.id });
-                                  }}
-                                  className="cursor-pointer inline-flex items-center gap-1.5 py-0.5 truncate flex-1"
-                                >
+                              <div
+                                className="flex items-center justify-between min-h-[22px] gap-1.5 cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveDropdown(isDropdownOpen ? null : { issueKey: issue.key, colId: col.id });
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveDropdown({ issueKey: issue.key, colId: col.id });
+                                }}
+                              >
+                                <div className="inline-flex items-center gap-1.5 py-0.5 truncate flex-1">
                                   {currentOpt ? (
                                     <span
                                       className={`px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs ${getColorClasses(
@@ -920,7 +960,7 @@ export const DataGrid: React.FC<Props> = ({
                                     setActiveDropdown({ issueKey: issue.key, colId: col.id });
                                   }}
                                   className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-colors cursor-pointer shrink-0"
-                                  title="Seleccionar opción"
+                                  title={lang === 'es' ? 'Seleccionar opción' : 'Select option'}
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
@@ -976,12 +1016,24 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              className="px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800"
+                              className="px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800 cursor-pointer hover:bg-indigo-50/40"
                               title={
                                 col.formula
-                                  ? `${col.name} = ${col.formula}\nResultado: ${result ?? '(vacío)'}`
-                                  : col.name
+                                  ? `${col.name} = ${col.formula}\nResultado: ${result ?? '(vacío)'}\n(${
+                                      lang === 'es' ? 'Doble clic para editar fórmula' : 'Double click to edit formula'
+                                    })`
+                                  : `${col.name} (${
+                                      lang === 'es'
+                                        ? 'Doble clic para configurar fórmula'
+                                        : 'Double click to configure formula'
+                                    })`
                               }
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                if (onOpenEditColumn) {
+                                  onOpenEditColumn(col);
+                                }
+                              }}
                             >
                               <div className="flex items-center min-h-[22px] truncate">
                                 {isError ? (
@@ -1023,8 +1075,12 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
-                            className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40"
-                            title="Clic en lápiz o doble clic para editar"
+                            className="px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-text"
+                            title={
+                              lang === 'es'
+                                ? 'Doble clic o clic en lápiz para editar'
+                                : 'Double click or click pencil to edit'
+                            }
                             onDoubleClick={(e) => {
                               e.stopPropagation();
                               setEditingCell({
@@ -1045,7 +1101,17 @@ export const DataGrid: React.FC<Props> = ({
                                 onCancel={() => setEditingCell(null)}
                               />
                             ) : (
-                              <div className="flex items-center justify-between min-h-[22px] gap-1.5">
+                              <div
+                                className="flex items-center justify-between min-h-[22px] gap-1.5 w-full"
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingCell({
+                                    issueKey: issue.key,
+                                    colId: col.id,
+                                    initialVal: displayVal,
+                                  });
+                                }}
+                              >
                                 <span
                                   className="truncate text-gray-800 cursor-pointer flex-1"
                                   onClick={(e) => {

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
-  Check,
   Edit2,
   Eye,
   EyeOff,
@@ -39,7 +38,7 @@ export const ManageFieldsModal: React.FC<Props> = ({
   onShowAll,
   onHideAll,
   onReorderColumns,
-  onUpdateColumn,
+  onUpdateColumn: _onUpdateColumn,
   onDeleteColumn,
   onOpenAddColumn,
   onOpenEditColumn,
@@ -48,9 +47,6 @@ export const ManageFieldsModal: React.FC<Props> = ({
   const isEs = lang === 'es';
 
   const [search, setSearch] = useState('');
-  const [editingColId, setEditingColId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const [savingCol, setSavingCol] = useState(false);
   const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
   const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
 
@@ -113,24 +109,6 @@ export const ManageFieldsModal: React.FC<Props> = ({
 
     const reordered = updated.map((c, i) => ({ ...c, position: i }));
     await onReorderColumns(reordered);
-  };
-
-  const startRename = (col: CustomColumn) => {
-    setEditingColId(col.id);
-    setEditingName(col.name);
-  };
-
-  const saveRename = async (colId: string) => {
-    if (!editingName.trim()) return;
-    setSavingCol(true);
-    try {
-      await onUpdateColumn(colId, { name: editingName.trim() });
-      setEditingColId(null);
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setSavingCol(false);
-    }
   };
 
   const getBadgeColor = (type: string) => {
@@ -239,7 +217,6 @@ export const ManageFieldsModal: React.FC<Props> = ({
             filteredColumns.map((col, idx) => {
               const isFirst = idx === 0;
               const isLast = idx === filteredColumns.length - 1;
-              const isEditingThis = editingColId === col.id;
 
               const isDraggingThis = draggingRowId === col.id;
               const isOverThis = dragOverRowId === col.id;
@@ -330,56 +307,25 @@ export const ManageFieldsModal: React.FC<Props> = ({
                       {col.is_visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     </button>
 
-                    {/* Field Name & Rename Input */}
+                    {/* Field Name */}
                     <div className="flex-1 min-w-0">
-                      {isEditingThis ? (
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            autoFocus
-                            type="text"
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') saveRename(col.id);
-                              if (e.key === 'Escape') setEditingColId(null);
-                            }}
-                            className="w-full px-2 py-0.5 text-xs border border-blue-500 rounded bg-white font-medium text-gray-900 focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            disabled={savingCol}
-                            onClick={() => saveRename(col.id)}
-                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingColId(null)}
-                            className="p-1 text-gray-400 hover:bg-gray-100 rounded"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span
-                            onDoubleClick={() => startRename(col)}
-                            onClick={() => onOpenEditColumn(col)}
-                            title={isEs ? 'Doble clic para renombrar, clic para configuración' : 'Double click to rename, click for config'}
-                            className="font-semibold text-xs text-gray-800 truncate cursor-pointer hover:text-blue-600"
-                          >
-                            {col.name}
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${getBadgeColor(
-                              col.type
-                            )}`}
-                          >
-                            {getTypeLabel(col)}
-                          </span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span
+                          onClick={() => onOpenEditColumn(col)}
+                          onDoubleClick={() => onOpenEditColumn(col)}
+                          title={isEs ? 'Clic o doble clic para editar configuración' : 'Click or double click to edit config'}
+                          className="font-semibold text-xs text-gray-800 truncate cursor-pointer hover:text-blue-600"
+                        >
+                          {col.name}
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${getBadgeColor(
+                            col.type
+                          )}`}
+                        >
+                          {getTypeLabel(col)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

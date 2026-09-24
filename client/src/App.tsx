@@ -62,6 +62,7 @@ export function App() {
   // Modals & Drawers
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
+  const [editColumnOrigin, setEditColumnOrigin] = useState<'manage_fields' | 'grid' | null>(null);
   const [isManageFieldsOpen, setIsManageFieldsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeArchivyIssue, setActiveArchivyIssue] = useState<JiraIssue | null>(null);
@@ -642,6 +643,10 @@ export function App() {
           onUpdateCustomValue={handleUpdateCustomValue}
           onOpenArchivyDrawer={(issue) => setActiveArchivyIssue(issue)}
           onOpenAddColumn={() => setIsAddColumnOpen(true)}
+          onOpenEditColumn={(col) => {
+            setEditColumnOrigin('grid');
+            setEditingColumn(col);
+          }}
           onDeleteColumn={handleDeleteColumn}
           onUpdateColumnWidth={handleUpdateColumnWidth}
           onReorderColumns={handleReorderColumns}
@@ -674,6 +679,7 @@ export function App() {
         }}
         onOpenEditColumn={(col) => {
           setIsManageFieldsOpen(false);
+          setEditColumnOrigin('manage_fields');
           setEditingColumn(col);
         }}
         lang={lang}
@@ -692,8 +698,12 @@ export function App() {
       <EditColumnModal
         isOpen={!!editingColumn}
         onClose={() => {
+          const origin = editColumnOrigin;
           setEditingColumn(null);
-          setIsManageFieldsOpen(true); // Re-open manage fields when done
+          setEditColumnOrigin(null);
+          if (origin === 'manage_fields') {
+            setIsManageFieldsOpen(true);
+          }
         }}
         column={editingColumn}
         onUpdateColumn={handleUpdateColumn}
