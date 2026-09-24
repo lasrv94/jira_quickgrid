@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Table, Globe } from 'lucide-react';
 import { AddColumnModal } from './components/AddColumnModal';
 import { EditColumnModal } from './components/EditColumnModal';
@@ -24,6 +24,7 @@ import {
   setCustomValue,
   syncIssues,
   updateColumn,
+  updateView,
 } from './services/api';
 import type { AppConfig, CustomColumn, FilterCondition, FilterConjunction, JiraFilter, JiraIssue, SavedView } from './types';
 import type { Language } from './utils/i18n';
@@ -72,6 +73,191 @@ export function App() {
     localStorage.setItem('jira_grid_lang', next);
   };
 
+  const pendingSaveRef = useRef<{ viewId: string; patch: Partial<SavedView> } | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPendingSave = () => {
+    if (pendingSaveRef.current) {
+      const { viewId, patch } = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      updateView(viewId, patch).catch((err) =>
+        console.error('Error flushing view auto-save:', err)
+      );
+    }
+  };
+
+  const autoSaveActiveView = useCallback(
+    (patch: Partial<SavedView>, debounceMs: number = 0) => {
+      if (!activeViewId) return;
+      const targetViewId = activeViewId;
+
+      // 1. Immediately update in-memory views array so switching tabs or UI reflects it instantly
+      setViews((prevViews) =>
+        prevViews.map((v) => (v.id === targetViewId ? { ...v, ...patch } : v))
+      );
+
+      // 2. Persist to backend (with optional debounce)
+      if (debounceMs > 0) {
+        pendingSaveRef.current = {
+          viewId: targetViewId,
+          patch: {
+            ...(pendingSaveRef.current?.viewId === targetViewId ? pendingSaveRef.current.patch : {}),
+            ...patch,
+          },
+        };
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = setTimeout(() => {
+          if (pendingSaveRef.current && pendingSaveRef.current.viewId === targetViewId) {
+            const p = pendingSaveRef.current.patch;
+            pendingSaveRef.current = null;
+            updateView(targetViewId, p).catch((err) =>
+              console.error('Failed to auto-save view to backend:', err)
+            );
+          }
+        }, debounceMs);
+      } else {
+        let finalPatch = patch;
+        if (pendingSaveRef.current && pendingSaveRef.current.viewId === targetViewId) {
+          finalPatch = { ...pendingSaveRef.current.patch, ...patch };
+          pendingSaveRef.current = null;
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+            saveTimeoutRef.current = null;
+          }
+        }
+        updateView(targetViewId, finalPatch).catch((err) =>
+          console.error('Failed to auto-save view to backend:', err)
+        );
+      }
+    },
+    [activeViewId]
+  );
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncIssues(selectedFilterId);
+      const updatedIssues = await fetchIssues();
+      const updatedConfig = await fetchConfig();
+      setIssues(updatedIssues);
+      setConfig(updatedConfig);
+      setBannerMessage(result.message);
+      setTimeout(() => setBannerMessage(null), 4000);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSelectFilter = async (filterId: string, saveToView: boolean = true) => {
+    setSelectedFilterId(filterId);
+    if (saveToView) {
+      autoSaveActiveView({ filter_id: filterId }, 0);
+    }
+    setSyncing(true);
+    try {
+      await syncIssues(filterId);
+      const updatedIssues = await fetchIssues();
+      const updatedConfig = await fetchConfig();
+      setIssues(updatedIssues);
+      setConfig(updatedConfig);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const applyView = (view: SavedView, availableCols: CustomColumn[] = columns) => {
+    setActiveViewId(view.id);
+    setGroupBy(view.group_by || null);
+    setSortField(view.sort_field || null);
+    setSortDirection(view.sort_direction || 'asc');
+    setSearchQuery(view.search_query || '');
+
+    if (view.filter_rules?.conditions) {
+      setFilterConditions(view.filter_rules.conditions);
+      setFilterConjunction(view.filter_rules.conjunction || 'and');
+    } else {
+      setFilterConditions([]);
+      setFilterConjunction('and');
+    }
+
+    if (view.filter_id && view.filter_id !== selectedFilterId) {
+      handleSelectFilter(view.filter_id, false);
+    }
+
+    // Apply column visibility and column order
+    if (Array.isArray(view.visible_columns) && view.visible_columns.length > 0) {
+      const visibleSet = new Set(view.visible_columns);
+      const orderMap = new Map(view.visible_columns.map((id, idx) => [id, idx]));
+      setColumns(() => {
+        const updated = availableCols.map((c) => ({
+          ...c,
+          is_visible: visibleSet.has(c.id),
+        }));
+        return [...updated].sort((a, b) => {
+          const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999 + a.position;
+          const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999 + b.position;
+          return idxA - idxB;
+        });
+      });
+    } else {
+      // If view has no custom column filter or visible_columns is null/empty,
+      // all available columns are visible by default!
+      setColumns(() =>
+        availableCols.map((c) => ({
+          ...c,
+          is_visible: true,
+        }))
+      );
+    }
+  };
+
+  const handleSelectView = (view: SavedView) => {
+    flushPendingSave();
+    applyView(view);
+  };
+
+  const loadAllData = async () => {
+    setLoading(true);
+    try {
+      const [fetchedConfig, fetchedFilters, fetchedColumns, fetchedIssues, fetchedViews] = await Promise.all([
+        fetchConfig(),
+        fetchFilters(),
+        fetchColumns(),
+        fetchIssues(),
+        fetchViews().catch(() => []),
+      ]);
+      setConfig(fetchedConfig);
+      setFilters(fetchedFilters);
+      setColumns(fetchedColumns);
+      setIssues(fetchedIssues);
+      if (fetchedViews && fetchedViews.length > 0) {
+        setViews(fetchedViews);
+        const initialView =
+          fetchedViews.find((v) => v.id === activeViewId) ||
+          fetchedViews.find((v) => v.is_default) ||
+          fetchedViews[0];
+        if (initialView) {
+          applyView(initialView, fetchedColumns);
+        }
+      }
+      if (fetchedConfig.selected_filter_id) {
+        setSelectedFilterId(fetchedConfig.selected_filter_id);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Initial Data Load & OAuth Callback handling
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -96,67 +282,7 @@ export function App() {
     } else {
       loadAllData();
     }
-  }, []);
-
-  const loadAllData = async () => {
-    setLoading(true);
-    try {
-      const [fetchedConfig, fetchedFilters, fetchedColumns, fetchedIssues, fetchedViews] = await Promise.all([
-        fetchConfig(),
-        fetchFilters(),
-        fetchColumns(),
-        fetchIssues(),
-        fetchViews().catch(() => []),
-      ]);
-      setConfig(fetchedConfig);
-      setFilters(fetchedFilters);
-      setColumns(fetchedColumns);
-      setIssues(fetchedIssues);
-      if (fetchedViews && fetchedViews.length > 0) {
-        setViews(fetchedViews);
-      }
-      if (fetchedConfig.selected_filter_id) {
-        setSelectedFilterId(fetchedConfig.selected_filter_id);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const result = await syncIssues(selectedFilterId);
-      const updatedIssues = await fetchIssues();
-      const updatedConfig = await fetchConfig();
-      setIssues(updatedIssues);
-      setConfig(updatedConfig);
-      setBannerMessage(result.message);
-      setTimeout(() => setBannerMessage(null), 4000);
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleSelectFilter = async (filterId: string) => {
-    setSelectedFilterId(filterId);
-    setSyncing(true);
-    try {
-      await syncIssues(filterId);
-      const updatedIssues = await fetchIssues();
-      const updatedConfig = await fetchConfig();
-      setIssues(updatedIssues);
-      setConfig(updatedConfig);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSyncing(false);
-    }
-  };
+  }, [lang]);
 
   const handleUpdateCustomValue = async (issueKey: string, columnId: string, value: any) => {
     setIssues((prev) =>
@@ -184,7 +310,12 @@ export function App() {
   const handleAddColumn = async (columnData: Partial<CustomColumn>) => {
     try {
       const newCol = await createColumn(columnData);
-      setColumns((prev) => [...prev, newCol]);
+      setColumns((prev) => {
+        const next = [...prev, newCol];
+        const visibleIds = next.filter((c) => c.is_visible).map((c) => c.id);
+        autoSaveActiveView({ visible_columns: visibleIds }, 0);
+        return next;
+      });
     } catch (err: any) {
       alert(`Error al crear columna: ${err.message}`);
     }
@@ -198,24 +329,45 @@ export function App() {
     }
     try {
       await deleteColumn(columnId);
-      setColumns((prev) => prev.filter((c) => c.id !== columnId));
+      setColumns((prev) => {
+        const next = prev.filter((c) => c.id !== columnId);
+        const visibleIds = next.filter((c) => c.is_visible).map((c) => c.id);
+        autoSaveActiveView({ visible_columns: visibleIds }, 0);
+        return next;
+      });
     } catch (err: any) {
       alert(`Error al eliminar columna: ${err.message}`);
     }
   };
 
   const handleToggleColumnVisibility = async (columnId: string) => {
-    const col = columns.find((c) => c.id === columnId);
-    if (!col) return;
-    const newVisibility = !col.is_visible;
-    setColumns((prev) =>
-      prev.map((c) => (c.id === columnId ? { ...c, is_visible: newVisibility } : c))
+    const targetCol = columns.find((c) => c.id === columnId);
+    if (!targetCol) return;
+    const newVisibility = !targetCol.is_visible;
+    const updated = columns.map((c) =>
+      c.id === columnId ? { ...c, is_visible: newVisibility } : c
     );
+    setColumns(updated);
+    const visibleIds = updated.filter((c) => c.is_visible).map((c) => c.id);
+    autoSaveActiveView({ visible_columns: visibleIds }, 0);
     try {
       await updateColumn(columnId, { is_visible: newVisibility });
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleShowAllColumns = async () => {
+    const updated = columns.map((c) => ({ ...c, is_visible: true }));
+    setColumns(updated);
+    const visibleIds = updated.map((c) => c.id);
+    autoSaveActiveView({ visible_columns: visibleIds }, 0);
+  };
+
+  const handleHideAllColumns = async () => {
+    const updated = columns.map((c) => ({ ...c, is_visible: false }));
+    setColumns(updated);
+    autoSaveActiveView({ visible_columns: [] }, 0);
   };
 
   const handleUpdateColumnWidth = async (columnId: string, width: number) => {
@@ -231,6 +383,8 @@ export function App() {
 
   const handleReorderColumns = async (reorderedCols: CustomColumn[]) => {
     setColumns(reorderedCols);
+    const visibleIds = reorderedCols.filter((c) => c.is_visible).map((c) => c.id);
+    autoSaveActiveView({ visible_columns: visibleIds }, 0);
     try {
       await reorderColumns(reorderedCols.map((c) => c.id));
     } catch (err) {
@@ -250,6 +404,41 @@ export function App() {
     }
   };
 
+  const handleFilterConditionsChange = (newConditions: FilterCondition[]) => {
+    setFilterConditions(newConditions);
+    const filterRules = newConditions.length > 0 ? {
+      conditions: newConditions,
+      conjunction: filterConjunction,
+    } : null;
+    const isRemoving = newConditions.length <= filterConditions.length;
+    autoSaveActiveView({ filter_rules: filterRules }, isRemoving ? 0 : 400);
+  };
+
+  const handleFilterConjunctionChange = (newConjunction: FilterConjunction) => {
+    setFilterConjunction(newConjunction);
+    const filterRules = filterConditions.length > 0 ? {
+      conditions: filterConditions,
+      conjunction: newConjunction,
+    } : null;
+    autoSaveActiveView({ filter_rules: filterRules }, 0);
+  };
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    autoSaveActiveView({ search_query: query }, 400);
+  };
+
+  const handleGroupByChange = (field: string | null) => {
+    setGroupBy(field);
+    autoSaveActiveView({ group_by: field }, 0);
+  };
+
+  const handleSortChange = (field: string | null, dir: 'asc' | 'desc') => {
+    setSortField(field);
+    setSortDirection(dir);
+    autoSaveActiveView({ sort_field: field, sort_direction: dir }, 0);
+  };
+
   const handleExportPdf = () => {
     exportIssuesToPdf({
       issues: filteredAndSortedIssues,
@@ -261,35 +450,8 @@ export function App() {
     });
   };
 
-  // Views handling
-  const handleSelectView = (view: SavedView) => {
-    setActiveViewId(view.id);
-    setGroupBy(view.group_by || null);
-    setSortField(view.sort_field || null);
-    setSortDirection(view.sort_direction || 'asc');
-    setSearchQuery(view.search_query || '');
-    if (view.filter_rules?.conditions) {
-      setFilterConditions(view.filter_rules.conditions);
-      setFilterConjunction(view.filter_rules.conjunction || 'and');
-    } else {
-      setFilterConditions([]);
-      setFilterConjunction('and');
-    }
-    if (view.filter_id) {
-      handleSelectFilter(view.filter_id);
-    }
-    if (Array.isArray(view.visible_columns) && view.visible_columns.length > 0) {
-      const visibleSet = new Set(view.visible_columns);
-      setColumns((prev) =>
-        prev.map((c) => ({
-          ...c,
-          is_visible: visibleSet.has(c.id),
-        }))
-      );
-    }
-  };
-
   const handleCreateView = async (name: string) => {
+    flushPendingSave();
     const visibleColIds = columns.filter((c) => c.is_visible).map((c) => c.id);
     const filterRules = filterConditions.length > 0 ? {
       conditions: filterConditions,
@@ -451,19 +613,16 @@ export function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onExportPdf={handleExportPdf}
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={handleSearchChange}
         groupBy={groupBy}
-        onGroupByChange={setGroupBy}
+        onGroupByChange={handleGroupByChange}
         sortField={sortField}
         sortDirection={sortDirection}
-        onSortChange={(field, dir) => {
-          setSortField(field);
-          setSortDirection(dir);
-        }}
+        onSortChange={handleSortChange}
         filterConditions={filterConditions}
-        onFilterConditionsChange={setFilterConditions}
+        onFilterConditionsChange={handleFilterConditionsChange}
         filterConjunction={filterConjunction}
-        onFilterConjunctionChange={setFilterConjunction}
+        onFilterConjunctionChange={handleFilterConjunctionChange}
         issues={issues}
         matchingCount={filteredAndSortedIssues.length}
         totalCount={issues.length}
@@ -504,6 +663,8 @@ export function App() {
         onClose={() => setIsManageFieldsOpen(false)}
         columns={columns}
         onToggleVisibility={handleToggleColumnVisibility}
+        onShowAll={handleShowAllColumns}
+        onHideAll={handleHideAllColumns}
         onReorderColumns={handleReorderColumns}
         onUpdateColumn={handleUpdateColumn}
         onDeleteColumn={handleDeleteColumn}

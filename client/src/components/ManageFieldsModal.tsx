@@ -21,6 +21,8 @@ interface Props {
   onClose: () => void;
   columns: CustomColumn[];
   onToggleVisibility: (colId: string) => void;
+  onShowAll?: () => void;
+  onHideAll?: () => void;
   onReorderColumns: (reorderedCols: CustomColumn[]) => Promise<void>;
   onUpdateColumn: (colId: string, data: Partial<CustomColumn>) => Promise<void>;
   onDeleteColumn: (colId: string) => Promise<void>;
@@ -34,6 +36,8 @@ export const ManageFieldsModal: React.FC<Props> = ({
   onClose,
   columns,
   onToggleVisibility,
+  onShowAll,
+  onHideAll,
   onReorderColumns,
   onUpdateColumn,
   onDeleteColumn,
@@ -60,6 +64,10 @@ export const ManageFieldsModal: React.FC<Props> = ({
   const visibleCount = columns.filter((c) => c.is_visible).length;
 
   const handleShowAll = async () => {
+    if (onShowAll) {
+      onShowAll();
+      return;
+    }
     for (const col of columns) {
       if (!col.is_visible) {
         onToggleVisibility(col.id);
@@ -68,6 +76,10 @@ export const ManageFieldsModal: React.FC<Props> = ({
   };
 
   const handleHideAll = async () => {
+    if (onHideAll) {
+      onHideAll();
+      return;
+    }
     for (const col of columns) {
       if (col.is_visible) {
         onToggleVisibility(col.id);

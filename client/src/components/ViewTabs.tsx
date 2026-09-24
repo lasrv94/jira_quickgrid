@@ -43,6 +43,11 @@ export const ViewTabs: React.FC<Props> = ({
           return (
             <div
               key={v.id}
+              title={
+                isActive
+                  ? (lang === 'es' ? 'Vista activa (filtros y columnas se guardan automáticamente)' : 'Active view (filters and columns auto-save)')
+                  : displayName
+              }
               className={`group relative flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium cursor-pointer transition-all border shrink-0 ${
                 isActive
                   ? 'bg-blue-50 text-blue-800 border-blue-300 font-semibold shadow-2xs'

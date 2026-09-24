@@ -166,10 +166,21 @@ def test_views_crud():
     assert created["group_by"] == "priority"
     view_id = created["id"]
 
-    # 3. Update view
-    upd_res = client.patch(f"/api/views/{view_id}", json={"name": "Sprint Bugs View Updated"})
+    # 3. Update view with visible_columns and filter_rules
+    filter_rules = {
+        "conditions": [{"id": "c-1", "fieldId": "priority", "operator": "equals", "value": "Highest"}],
+        "conjunction": "and"
+    }
+    upd_res = client.patch(f"/api/views/{view_id}", json={
+        "name": "Sprint Bugs View Updated",
+        "visible_columns": ["col-status", "col-archivy", "col-new"],
+        "filter_rules": filter_rules
+    })
     assert upd_res.status_code == 200
-    assert upd_res.json()["name"] == "Sprint Bugs View Updated"
+    updated_data = upd_res.json()
+    assert updated_data["name"] == "Sprint Bugs View Updated"
+    assert updated_data["visible_columns"] == ["col-status", "col-archivy", "col-new"]
+    assert updated_data["filter_rules"] == filter_rules
 
     # 4. Delete view
     del_res = client.delete(f"/api/views/{view_id}")
