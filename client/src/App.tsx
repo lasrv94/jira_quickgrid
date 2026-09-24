@@ -11,6 +11,7 @@ import { Toolbar } from './components/Toolbar';
 import { ViewTabs } from './components/ViewTabs';
 import {
   apiFetch,
+  bulkSetCustomValues,
   createColumn,
   createView,
   deleteColumn,
@@ -302,6 +303,49 @@ export function App() {
     );
     try {
       await setCustomValue(issueKey, columnId, value);
+    } catch (err) {
+      console.error(err);
+      loadAllData();
+    }
+  };
+
+  const handleUpdateCustomValuesBulk = async (
+    updates: Array<{ issueKey: string; columnId: string; value: any }>
+  ) => {
+    if (updates.length === 0) return;
+
+    setIssues((prev) => {
+      const updateMap = new Map<string, Record<string, any>>();
+      for (const u of updates) {
+        if (!updateMap.has(u.issueKey)) {
+          updateMap.set(u.issueKey, {});
+        }
+        updateMap.get(u.issueKey)![u.columnId] = u.value;
+      }
+
+      return prev.map((item) => {
+        const itemUpdates = updateMap.get(item.key);
+        if (itemUpdates) {
+          return {
+            ...item,
+            custom_values: {
+              ...item.custom_values,
+              ...itemUpdates,
+            },
+          };
+        }
+        return item;
+      });
+    });
+
+    try {
+      await bulkSetCustomValues(
+        updates.map((u) => ({
+          issue_key: u.issueKey,
+          column_id: u.columnId,
+          value: u.value,
+        }))
+      );
     } catch (err) {
       console.error(err);
       loadAllData();
@@ -641,6 +685,7 @@ export function App() {
           issues={filteredAndSortedIssues}
           columns={columns}
           onUpdateCustomValue={handleUpdateCustomValue}
+          onUpdateCustomValuesBulk={handleUpdateCustomValuesBulk}
           onOpenArchivyDrawer={(issue) => setActiveArchivyIssue(issue)}
           onOpenAddColumn={() => setIsAddColumnOpen(true)}
           onOpenEditColumn={(col) => {

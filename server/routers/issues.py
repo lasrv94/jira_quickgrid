@@ -3,7 +3,15 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
-from models import CustomColumn, IssueCustomValue, IssueOut, JiraFilterOut, JiraIssue, SetCustomValueRequest
+from models import (
+    BulkSetCustomValuesRequest,
+    CustomColumn,
+    IssueCustomValue,
+    IssueOut,
+    JiraFilterOut,
+    JiraIssue,
+    SetCustomValueRequest,
+)
 from services.jira_service import JiraService
 
 router = APIRouter(prefix="/api", tags=["issues"])
@@ -119,3 +127,42 @@ def delete_issue_custom_value(key: str, column_id: str, db: Session = Depends(ge
         db.delete(custom_val)
         db.commit()
     return {"status": "success", "issue_key": key, "column_id": column_id}
+
+
+@router.post("/issues/custom-values/bulk")
+def bulk_update_custom_values(data: BulkSetCustomValuesRequest, db: Session = Depends(get_db)):
+    if not data.items:
+        return {"status": "success", "updated_count": 0}
+
+    col_ids = {item.column_id for item in data.items}
+    columns = {col.id: col for col in db.query(CustomColumn).filter(CustomColumn.id.in_(col_ids)).all()}
+
+    now = datetime.now(timezone.utc)
+    updated_count = 0
+    for item in data.items:
+        col = columns.get(item.column_id)
+        if not col or col.type in ("jira_field", "formula", "archivy_link") or col.jira_field_key:
+            continue
+
+        custom_val = db.query(IssueCustomValue).filter(
+            IssueCustomValue.issue_key == item.issue_key,
+            IssueCustomValue.column_id == item.column_id
+        ).first()
+
+        if custom_val:
+            custom_val.value = item.value
+            custom_val.updated_at = now
+        else:
+            custom_val = IssueCustomValue(
+                issue_key=item.issue_key,
+                column_id=item.column_id,
+                value=item.value,
+                updated_at=now,
+                updated_by="User"
+            )
+            db.add(custom_val)
+        updated_count += 1
+
+    db.commit()
+    return {"status": "success", "updated_count": updated_count}
+
