@@ -1,4 +1,5 @@
 import type { CustomColumn, FilterCondition, FilterConjunction, FilterOperator, JiraIssue } from '../types';
+import { evaluateFormula } from './formulaEvaluator';
 
 export type FieldCategory = 'text' | 'select' | 'multiselect' | 'number' | 'date';
 
@@ -22,8 +23,11 @@ export const BUILTIN_FIELDS: FieldDefinition[] = [
 ];
 
 export function getFieldValue(issue: JiraIssue, fieldId: string, columns?: CustomColumn[]): any {
-  // Check if fieldId maps to a custom column with jira_field_key
+  // Check if fieldId maps to a custom column with jira_field_key or formula
   const col = columns?.find((c) => c.id === fieldId);
+  if (col && col.type === 'formula') {
+    return evaluateFormula(col.formula, issue, columns);
+  }
   const jiraKey = col?.jira_field_key;
   if (jiraKey && issue.raw_jira_fields && jiraKey in issue.raw_jira_fields) {
     return issue.raw_jira_fields[jiraKey];

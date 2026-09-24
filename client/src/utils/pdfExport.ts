@@ -3,6 +3,8 @@ import autoTable from 'jspdf-autotable';
 import type { AppConfig, CustomColumn, JiraIssue } from '../types';
 import type { Language } from './i18n';
 
+import { evaluateFormula } from './formulaEvaluator';
+
 interface ExportPdfOptions {
   issues: JiraIssue[];
   columns: CustomColumn[];
@@ -118,6 +120,11 @@ export function exportIssuesToPdf({
       }
       if (typeof rawVal === 'object') return rawVal.displayName || rawVal.name || rawVal.value || '-';
       return String(rawVal);
+    }
+    if (col.type === 'formula') {
+      const res = evaluateFormula(col.formula, issue, columns);
+      if (res === null || res === undefined || res === '') return '-';
+      return String(res);
     }
     const val = issue.custom_values?.[col.id];
     if (val === null || val === undefined || val === '') return '-';

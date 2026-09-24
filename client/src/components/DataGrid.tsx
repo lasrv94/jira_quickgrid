@@ -16,6 +16,7 @@ import type { CustomColumn, JiraIssue } from '../types';
 import { getColorClasses } from '../utils/colors';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
+import { evaluateFormula } from '../utils/formulaEvaluator';
 
 // ----------------- SUB-COMPONENTS FOR BULLETPROOF EDITING -----------------
 
@@ -688,6 +689,13 @@ export const DataGrid: React.FC<Props> = ({
                         <span className="px-1 py-0.2 text-[9px] bg-blue-100 text-blue-800 font-mono rounded font-bold">
                           JIRA
                         </span>
+                      ) : col.type === 'formula' ? (
+                        <span
+                          className="px-1.5 py-0.2 text-[9px] bg-indigo-100 text-indigo-700 font-mono rounded font-bold"
+                          title={col.formula ? `fx: ${col.formula}` : 'Fórmula'}
+                        >
+                          fx
+                        </span>
                       ) : (
                         <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
                       )}
@@ -948,6 +956,48 @@ export const DataGrid: React.FC<Props> = ({
                                 {isComponentField
                                   ? renderComponentPills(jiraRawVal)
                                   : renderJiraFieldValue(jiraRawVal, fieldKey)}
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        // 3.5. Formula / Computed Field Columns (STRICTLY READ-ONLY)
+                        if (col.type === 'formula') {
+                          const result = evaluateFormula(col.formula, issue, columns);
+                          const isError = result === 'Error: Formula';
+                          const isOne = result === 1 || result === '1' || result === true;
+                          const isZero = result === 0 || result === '0' || result === false;
+
+                          return (
+                            <td
+                              key={col.id}
+                              className="px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800"
+                              title={
+                                col.formula
+                                  ? `${col.name} = ${col.formula}\nResultado: ${result ?? '(vacío)'}`
+                                  : col.name
+                              }
+                            >
+                              <div className="flex items-center min-h-[22px] truncate">
+                                {isError ? (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-100 text-rose-700 rounded border border-rose-200">
+                                    #ERROR!
+                                  </span>
+                                ) : isOne ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                                    1
+                                  </span>
+                                ) : isZero ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                                    0
+                                  </span>
+                                ) : result !== null && result !== undefined && String(result) !== '' ? (
+                                  <span className="text-xs font-medium text-gray-900 truncate">
+                                    {String(result)}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300 italic text-xs">-</span>
+                                )}
                               </div>
                             </td>
                           );

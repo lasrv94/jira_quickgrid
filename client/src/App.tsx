@@ -684,6 +684,8 @@ export function App() {
         isOpen={isAddColumnOpen}
         onClose={() => setIsAddColumnOpen(false)}
         onAddColumn={handleAddColumn}
+        existingColumns={columns}
+        lang={lang}
       />
 
       {/* Edit Column Modal */}
@@ -695,6 +697,8 @@ export function App() {
         }}
         column={editingColumn}
         onUpdateColumn={handleUpdateColumn}
+        existingColumns={columns}
+        lang={lang}
       />
 
       {/* Jira Connection Settings Modal */}

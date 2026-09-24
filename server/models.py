@@ -53,6 +53,7 @@ class CustomColumn(Base):
     is_visible = Column(Boolean, default=True)
     width = Column(Integer, default=160)
     jira_field_key = Column(String(128), nullable=True)
+    formula = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     values = relationship("IssueCustomValue", back_populates="column", cascade="all, delete-orphan")
@@ -120,12 +121,13 @@ class SelectOption(BaseModel):
 
 class CustomColumnCreate(BaseModel):
     name: str
-    type: str  # single_select, text, long_text, date, number, archivy_link, jira_field
+    type: str  # single_select, text, long_text, date, number, archivy_link, jira_field, formula
     options: Optional[List[Dict[str, Any]]] = None
     position: Optional[int] = 0
     is_visible: Optional[bool] = True
     width: Optional[int] = 160
     jira_field_key: Optional[str] = None
+    formula: Optional[str] = None
 
 class CustomColumnUpdate(BaseModel):
     name: Optional[str] = None
@@ -135,6 +137,7 @@ class CustomColumnUpdate(BaseModel):
     is_visible: Optional[bool] = None
     width: Optional[int] = None
     jira_field_key: Optional[str] = None
+    formula: Optional[str] = None
 
 class CustomColumnOut(BaseModel):
     id: str
@@ -145,6 +148,7 @@ class CustomColumnOut(BaseModel):
     is_visible: bool
     width: int
     jira_field_key: Optional[str] = None
+    formula: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

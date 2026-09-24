@@ -2,17 +2,30 @@ import { useEffect, useState } from 'react';
 import { Edit2, Plus, Trash2, X } from 'lucide-react';
 import type { ColumnType, CustomColumn, SelectOption } from '../types';
 import { COLOR_OPTIONS } from '../utils/colors';
+import type { Language } from '../utils/i18n';
+import { FormulaEditor } from './FormulaEditor';
+import { validateFormula } from '../utils/formulaEvaluator';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   column: CustomColumn | null;
   onUpdateColumn: (colId: string, col: Partial<CustomColumn>) => Promise<void>;
+  existingColumns?: CustomColumn[];
+  lang?: Language;
 }
 
-export const EditColumnModal: React.FC<Props> = ({ isOpen, onClose, column, onUpdateColumn }) => {
+export const EditColumnModal: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  column,
+  onUpdateColumn,
+  existingColumns = [],
+  lang = 'es',
+}) => {
   const [name, setName] = useState('');
   const [type, setType] = useState<ColumnType>('single_select');
+  const [formula, setFormula] = useState('');
   const [options, setOptions] = useState<SelectOption[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -20,6 +33,7 @@ export const EditColumnModal: React.FC<Props> = ({ isOpen, onClose, column, onUp
     if (isOpen && column) {
       setName(column.name || '');
       setType(column.type || 'single_select');
+      setFormula(column.formula || '');
       setOptions(column.options || []);
     }
   }, [isOpen, column]);
@@ -45,12 +59,20 @@ export const EditColumnModal: React.FC<Props> = ({ isOpen, onClose, column, onUp
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !column) return;
+    if (type === 'formula') {
+      const check = validateFormula(formula);
+      if (!check.valid) {
+        alert(`Error en la fórmula: ${check.error}`);
+        return;
+      }
+    }
     setLoading(true);
     try {
       await onUpdateColumn(column.id, {
         name: name.trim(),
         type,
         options: type === 'single_select' ? options : [],
+        formula: type === 'formula' ? formula.trim() : undefined,
       });
       onClose();
     } catch (err) {
@@ -102,6 +124,7 @@ export const EditColumnModal: React.FC<Props> = ({ isOpen, onClose, column, onUp
                   className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500 cursor-not-allowed"
                 >
                   <option value="single_select">Selección Única (Color Pills)</option>
+                  <option value="formula">Fórmula / Campo Calculado (fx)</option>
                   <option value="text">Texto Corto</option>
                   <option value="long_text">Texto Largo / Notas (Multi-línea)</option>
                   <option value="number">Número</option>
@@ -158,6 +181,15 @@ export const EditColumnModal: React.FC<Props> = ({ isOpen, onClose, column, onUp
                     ))}
                   </div>
                 </div>
+              )}
+
+              {type === 'formula' && (
+                <FormulaEditor
+                  formula={formula}
+                  onChangeFormula={setFormula}
+                  existingColumns={existingColumns}
+                  lang={lang}
+                />
               )}
           <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
             <button

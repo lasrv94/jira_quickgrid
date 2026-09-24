@@ -40,10 +40,14 @@ def test_columns_crud():
     col_id = created["id"]
     assert created["name"] == "QA Signoff"
 
-    # 3. Update column
-    update_res = client.patch(f"/api/columns/{col_id}", json={"name": "QA Signoff Final"})
+    # 3. Update column (including formula test)
+    update_res = client.patch(f"/api/columns/{col_id}", json={
+        "name": "QA Signoff Final",
+        "formula": 'IF({priority} = "Highest", 1, 0)'
+    })
     assert update_res.status_code == 200
     assert update_res.json()["name"] == "QA Signoff Final"
+    assert update_res.json()["formula"] == 'IF({priority} = "Highest", 1, 0)'
 
     # 4. Reorder columns
     reorder_res = client.post("/api/columns/reorder", json={"column_ids": [col_id, "col-estado-interno"]})

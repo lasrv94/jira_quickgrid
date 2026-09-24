@@ -166,6 +166,22 @@ export const translations = {
     op_is_before: 'es antes de',
     op_is_after: 'es después de',
     op_is_today: 'es hoy',
+
+    // Formula Fields
+    col_formula: 'Fórmula (fx)',
+    formula_field_type: 'Fórmula / Campo Calculado (fx)',
+    formula_builder_title: 'Constructor de Condición SI / IF',
+    formula_if_field: 'Si el campo',
+    formula_operator: 'Operador',
+    formula_compare_val: 'Valor a comparar',
+    formula_then_val: 'Entonces dar (Si es Verdadero)',
+    formula_else_val: 'Sino dar (Si es Falso)',
+    formula_preview_label: 'Expresión de la Fórmula',
+    formula_manual_edit: 'Modo manual / Editar fórmula',
+    formula_syntax_valid: 'Sintaxis válida',
+    formula_syntax_invalid: 'Sintaxis inválida',
+    formula_quick_examples: 'Ejemplos rápidos:',
+    formula_read_only_hint: 'Campo calculado dinámicamente. No modificable manualmente.',
   },
   en: {
     // App header
@@ -332,6 +348,22 @@ export const translations = {
     op_is_before: 'is before',
     op_is_after: 'is after',
     op_is_today: 'is today',
+
+    // Formula Fields
+    col_formula: 'Formula (fx)',
+    formula_field_type: 'Formula / Computed Field (fx)',
+    formula_builder_title: 'Visual IF Condition Builder',
+    formula_if_field: 'If field',
+    formula_operator: 'Operator',
+    formula_compare_val: 'Comparison value',
+    formula_then_val: 'Then value (If True)',
+    formula_else_val: 'Else value (If False)',
+    formula_preview_label: 'Formula Expression',
+    formula_manual_edit: 'Manual mode / Edit formula',
+    formula_syntax_valid: 'Valid syntax',
+    formula_syntax_invalid: 'Invalid syntax',
+    formula_quick_examples: 'Quick presets:',
+    formula_read_only_hint: 'Dynamically calculated field. Read-only.',
   },
 };
 

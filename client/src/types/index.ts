@@ -5,7 +5,8 @@ export type ColumnType =
   | 'date'
   | 'number'
   | 'archivy_link'
-  | 'jira_field';
+  | 'jira_field'
+  | 'formula';
 
 export interface SelectOption {
   id: string;
@@ -22,6 +23,7 @@ export interface CustomColumn {
   is_visible: boolean;
   width: number;
   jira_field_key?: string;
+  formula?: string;
 }
 
 export interface JiraFieldInfo {

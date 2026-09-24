@@ -23,6 +23,10 @@ try:
             conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN jira_field_key VARCHAR(128)")
             conn.commit()
 
+        if "formula" not in col_names and len(col_names) > 0:
+            conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN formula TEXT")
+            conn.commit()
+
         config_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(saved_configs)")}
         if config_cols and "jira_verify_tls" not in config_cols:
             conn.exec_driver_sql("ALTER TABLE saved_configs ADD COLUMN jira_verify_tls BOOLEAN NOT NULL DEFAULT 1")

@@ -145,6 +145,8 @@ export const ManageFieldsModal: React.FC<Props> = ({
         return 'bg-emerald-100 text-emerald-700 border-emerald-200';
       case 'date':
         return 'bg-rose-100 text-rose-700 border-rose-200';
+      case 'formula':
+        return 'bg-indigo-100 text-indigo-700 border-indigo-200';
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200';
     }
@@ -152,6 +154,7 @@ export const ManageFieldsModal: React.FC<Props> = ({
 
   const getTypeLabel = (col: CustomColumn) => {
     if (col.type === 'jira_field' || col.jira_field_key) return 'Jira Field';
+    if (col.type === 'formula') return 'fx ' + (isEs ? 'Fórmula' : 'Formula');
     if (col.type === 'single_select') return isEs ? 'Selección Única' : 'Single Select';
     if (col.type === 'archivy_link') return 'Archivy Wiki';
     if (col.type === 'number') return isEs ? 'Número' : 'Number';

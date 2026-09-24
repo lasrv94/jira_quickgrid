@@ -76,7 +76,8 @@ def create_column(data: CustomColumnCreate, db: Session = Depends(get_db)):
         position=data.position if data.position is not None else count,
         is_visible=data.is_visible if data.is_visible is not None else True,
         width=data.width or 160,
-        jira_field_key=data.jira_field_key
+        jira_field_key=data.jira_field_key,
+        formula=data.formula,
     )
     db.add(new_col)
     db.commit()
@@ -102,6 +103,8 @@ def update_column(column_id: str, data: CustomColumnUpdate, db: Session = Depend
         col.width = data.width
     if data.jira_field_key is not None:
         col.jira_field_key = data.jira_field_key
+    if data.formula is not None:
+        col.formula = data.formula
 
     db.commit()
     db.refresh(col)
