@@ -3,8 +3,8 @@ import { AlertCircle, Check, Code, HelpCircle, Palette, Plus, Sliders, Sparkles,
 import type { CustomColumn, SelectOption } from '../types';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
-import { buildIfFormula, validateFormula } from '../utils/formulaEvaluator';
-import { COLOR_OPTIONS } from '../utils/colors';
+import { buildIfFormula, parseIfFormula, validateFormula } from '../utils/formulaEvaluator';
+import { COLOR_OPTIONS, getColorClasses } from '../utils/colors';
 
 interface FormulaEditorProps {
   formula: string;
@@ -35,25 +35,42 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
   const [trueColor, setTrueColor] = useState('emerald');
   const [falseColor, setFalseColor] = useState('slate');
   const [isManual, setIsManual] = useState(false);
-  const [showColorManager, setShowColorManager] = useState(true);
+  const [showColorManager, setShowColorManager] = useState(false);
 
-  // Initialize or update visual formula if empty
+  // Parse existing formula into visual builder fields on mount or when formula changes
   useEffect(() => {
-    if (!formula && !isManual) {
+    if (formula && formula.trim()) {
+      const parsed = parseIfFormula(formula);
+      if (parsed.isSimpleIf) {
+        if (parsed.field) setIfField(parsed.field);
+        if (parsed.operator) setIfOperator(parsed.operator);
+        if (parsed.compareValue !== undefined) setIfValue(parsed.compareValue);
+        if (parsed.trueVal !== undefined) setIfTrueVal(parsed.trueVal);
+        if (parsed.falseVal !== undefined) setIfFalseVal(parsed.falseVal);
+        setIsManual(false);
+
+        // Sync colors from options if available
+        if (options && options.length > 0) {
+          const matchT = options.find(
+            (o) => o.label.toLowerCase() === (parsed.trueVal || '').toLowerCase()
+          );
+          if (matchT) setTrueColor(matchT.color);
+
+          const matchF = options.find(
+            (o) => o.label.toLowerCase() === (parsed.falseVal || '').toLowerCase()
+          );
+          if (matchF) setFalseColor(matchF.color);
+        }
+      } else {
+        setIsManual(true);
+      }
+    } else {
+      // Default formula if empty
       const initial = buildIfFormula(ifField, ifOperator, ifValue, ifTrueVal, ifFalseVal);
       onChangeFormula(initial);
+      syncOptions(ifTrueVal, trueColor, ifFalseVal, falseColor);
     }
-  }, [formula, isManual, ifField, ifOperator, ifValue, ifTrueVal, ifFalseVal, onChangeFormula]);
-
-  // Sync initial options if empty
-  useEffect(() => {
-    if (options.length === 0 && onChangeOptions) {
-      onChangeOptions([
-        { id: 'opt-true', label: ifTrueVal, color: trueColor },
-        { id: 'opt-false', label: ifFalseVal, color: falseColor },
-      ]);
-    }
-  }, [options.length, onChangeOptions, ifTrueVal, trueColor, ifFalseVal, falseColor]);
+  }, [formula]);
 
   const syncOptions = (tVal: string, tColor: string, fVal: string, fColor: string) => {
     if (!onChangeOptions) return;
@@ -199,7 +216,7 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
         <button
           type="button"
           onClick={() => setIsManual(!isManual)}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
         >
           {isManual ? (
             <>
@@ -288,93 +305,139 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
             </div>
           )}
 
-          {/* Row 3: Output Values and Colors (True / False) */}
+          {/* Row 3: Output Values and Interactive Color Pills (True / False) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-indigo-100">
-            {/* Si es Verdadero */}
-            <div className="bg-white p-2.5 rounded-lg border border-indigo-100 shadow-2xs space-y-1.5">
+            {/* Card Si es Verdadero */}
+            <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-2xs space-y-2">
               <div className="flex items-center justify-between">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-indigo-950">
-                  {t.formula_then_val}
+                <label className="text-[10px] font-bold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span>{t.formula_then_val}</span>
                 </label>
-                <span className="text-[10px] font-semibold text-gray-500">Color:</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="text"
-                  value={ifTrueVal}
-                  placeholder="Ej: Aprobado, 1, Urgente"
-                  onChange={(e) =>
-                    handleVisualChange(
-                      ifField,
-                      ifOperator,
-                      ifValue,
-                      e.target.value,
-                      ifFalseVal,
-                      trueColor,
-                      falseColor
-                    )
-                  }
-                  className="flex-1 px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900"
-                />
-                <select
-                  value={trueColor}
-                  onChange={(e) => {
-                    const c = e.target.value;
-                    setTrueColor(c);
-                    syncOptions(ifTrueVal, c, ifFalseVal, falseColor);
-                  }}
-                  className="text-xs py-1 px-2 rounded-md border border-gray-300 bg-gray-50 font-medium focus:outline-none"
+                {/* Live Badge Preview */}
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold shadow-2xs ${getColorClasses(
+                    trueColor
+                  )}`}
                 >
-                  {COLOR_OPTIONS.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                  {ifTrueVal || '(vacío)'}
+                </span>
+              </div>
+
+              <input
+                type="text"
+                value={ifTrueVal}
+                placeholder="Ej: Aprobado, 1, Urgente"
+                onChange={(e) =>
+                  handleVisualChange(
+                    ifField,
+                    ifOperator,
+                    ifValue,
+                    e.target.value,
+                    ifFalseVal,
+                    trueColor,
+                    falseColor
+                  )
+                }
+                className="w-full px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900"
+              />
+
+              {/* Color Selector Pills */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-500 block mb-1">
+                  {isEs ? 'Color de la píldora (Pill):' : 'Pill Badge Color:'}
+                </span>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {COLOR_OPTIONS.map((c) => {
+                    const isSelected = trueColor === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setTrueColor(c.id);
+                          syncOptions(ifTrueVal, c.id, ifFalseVal, falseColor);
+                        }}
+                        title={c.label}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border transition-all cursor-pointer ${
+                          isSelected
+                            ? `${c.bg} ${c.text} ${c.border} ring-2 ring-indigo-500 ring-offset-1 font-bold`
+                            : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                        <span>{c.label.split(' ')[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* Si es Falso */}
-            <div className="bg-white p-2.5 rounded-lg border border-indigo-100 shadow-2xs space-y-1.5">
+            {/* Card Si es Falso */}
+            <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-2xs space-y-2">
               <div className="flex items-center justify-between">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-700">
-                  {t.formula_else_val}
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-gray-400" />
+                  <span>{t.formula_else_val}</span>
                 </label>
-                <span className="text-[10px] font-semibold text-gray-500">Color:</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="text"
-                  value={ifFalseVal}
-                  placeholder="Ej: Rechazado, 0, Normal"
-                  onChange={(e) =>
-                    handleVisualChange(
-                      ifField,
-                      ifOperator,
-                      ifValue,
-                      ifTrueVal,
-                      e.target.value,
-                      trueColor,
-                      falseColor
-                    )
-                  }
-                  className="flex-1 px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900"
-                />
-                <select
-                  value={falseColor}
-                  onChange={(e) => {
-                    const c = e.target.value;
-                    setFalseColor(c);
-                    syncOptions(ifTrueVal, trueColor, ifFalseVal, c);
-                  }}
-                  className="text-xs py-1 px-2 rounded-md border border-gray-300 bg-gray-50 font-medium focus:outline-none"
+                {/* Live Badge Preview */}
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold shadow-2xs ${getColorClasses(
+                    falseColor
+                  )}`}
                 >
-                  {COLOR_OPTIONS.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                  {ifFalseVal || '(vacío)'}
+                </span>
+              </div>
+
+              <input
+                type="text"
+                value={ifFalseVal}
+                placeholder="Ej: Rechazado, 0, Normal"
+                onChange={(e) =>
+                  handleVisualChange(
+                    ifField,
+                    ifOperator,
+                    ifValue,
+                    ifTrueVal,
+                    e.target.value,
+                    trueColor,
+                    falseColor
+                  )
+                }
+                className="w-full px-2.5 py-1 text-xs font-semibold rounded-md border border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900"
+              />
+
+              {/* Color Selector Pills */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-500 block mb-1">
+                  {isEs ? 'Color de la píldora (Pill):' : 'Pill Badge Color:'}
+                </span>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {COLOR_OPTIONS.map((c) => {
+                    const isSelected = falseColor === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setFalseColor(c.id);
+                          syncOptions(ifTrueVal, trueColor, ifFalseVal, c.id);
+                        }}
+                        title={c.label}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border transition-all cursor-pointer ${
+                          isSelected
+                            ? `${c.bg} ${c.text} ${c.border} ring-2 ring-indigo-500 ring-offset-1 font-bold`
+                            : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                        <span>{c.label.split(' ')[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -412,7 +475,7 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
               className="flex items-center gap-1.5 text-xs font-bold text-gray-800 uppercase tracking-wider hover:text-indigo-600 transition-colors cursor-pointer"
             >
               <Palette className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{isEs ? 'Colores Asignados a Resultados' : 'Result Badges & Colors'}</span>
+              <span>{isEs ? 'Paleta de Reglas de Color' : 'Custom Result Color Rules'}</span>
               <span className="text-[10px] text-indigo-600 font-normal">
                 ({options.length} {isEs ? 'reglas' : 'rules'})
               </span>
@@ -423,7 +486,7 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
               className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>{isEs ? 'Añadir Color' : 'Add Color'}</span>
+              <span>{isEs ? '+ Añadir Color' : '+ Add Color'}</span>
             </button>
           </div>
 
@@ -445,7 +508,7 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
                   <input
                     type="text"
                     value={opt.label}
-                    placeholder={isEs ? 'Valor exacto de resultado (ej. 1, Aprobado)' : 'Exact result value (e.g. 1, Approved)'}
+                    placeholder={isEs ? 'Valor de resultado (ej. 1, Aprobado)' : 'Result value (e.g. 1, Approved)'}
                     onChange={(e) => handleUpdateOption(idx, 'label', e.target.value)}
                     className="flex-1 px-2 py-0.5 text-xs font-medium rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />

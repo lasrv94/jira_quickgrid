@@ -720,3 +720,96 @@ export function buildIfFormula(
   const formattedCompare = formatOperand(compareValue);
   return `IF(${safeField} ${operator} ${formattedCompare}, ${formattedTrue}, ${formattedFalse})`;
 }
+
+export interface ParsedIfFormula {
+  isSimpleIf: boolean;
+  field?: string;
+  operator?: string;
+  compareValue?: string;
+  trueVal?: string;
+  falseVal?: string;
+}
+
+/**
+ * Parses an existing formula to extract the IF condition parameters for the visual builder.
+ */
+export function parseIfFormula(formula: string | undefined | null): ParsedIfFormula {
+  if (!formula || !formula.trim()) {
+    return { isSimpleIf: false };
+  }
+
+  try {
+    const tokens = tokenize(formula);
+    const parser = new FormulaParser(tokens);
+    const ast = parser.parse();
+
+    if (ast.type !== 'If') {
+      return { isSimpleIf: false };
+    }
+
+    let field = 'priority';
+    let operator = '=';
+    let compareValue = '';
+
+    // Condition
+    if (ast.condition.type === 'BinaryOp') {
+      operator = ast.condition.op;
+      if (ast.condition.left.type === 'Field') {
+        field = ast.condition.left.fieldName;
+      } else if (ast.condition.left.type === 'Literal') {
+        field = String(ast.condition.left.value);
+      }
+      if (ast.condition.right.type === 'Literal') {
+        compareValue = String(ast.condition.right.value);
+      } else if (ast.condition.right.type === 'Field') {
+        compareValue = `{${ast.condition.right.fieldName}}`;
+      }
+    } else if (ast.condition.type === 'Call') {
+      const fn = ast.condition.functionName.toUpperCase();
+      if (fn === 'IS_EMPTY' || fn === 'NOT_EMPTY') {
+        operator = fn;
+        if (ast.condition.args[0]?.type === 'Field') {
+          field = ast.condition.args[0].fieldName;
+        } else if (ast.condition.args[0]?.type === 'Literal') {
+          field = String(ast.condition.args[0].value);
+        }
+      } else {
+        return { isSimpleIf: false };
+      }
+    } else {
+      return { isSimpleIf: false };
+    }
+
+    // True branch
+    let trueVal = '1';
+    if (ast.thenBranch.type === 'Literal') {
+      trueVal = String(ast.thenBranch.value);
+    } else if (ast.thenBranch.type === 'Field') {
+      trueVal = `{${ast.thenBranch.fieldName}}`;
+    } else {
+      return { isSimpleIf: false };
+    }
+
+    // False branch
+    let falseVal = '0';
+    if (ast.elseBranch.type === 'Literal') {
+      falseVal = String(ast.elseBranch.value);
+    } else if (ast.elseBranch.type === 'Field') {
+      falseVal = `{${ast.elseBranch.fieldName}}`;
+    } else {
+      return { isSimpleIf: false };
+    }
+
+    return {
+      isSimpleIf: true,
+      field,
+      operator,
+      compareValue,
+      trueVal,
+      falseVal,
+    };
+  } catch {
+    return { isSimpleIf: false };
+  }
+}
+
