@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
   BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
+  ClipboardPaste,
   Copy,
   Edit2,
   ExternalLink,
@@ -202,7 +204,7 @@ const SelectDropdown: React.FC<SelectDropdownProps> = ({
   );
 };
 
-// ----------------- CLIPBOARD & AIRTABLE-STYLE COPY HELPERS -----------------
+// ----------------- CLIPBOARD & AIRTABLE-STYLE COPY/PASTE HELPERS -----------------
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -227,6 +229,140 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function readTextFromClipboard(): Promise<string> {
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      // Permission or fallback
+    }
+  }
+  return '';
+}
+
+/**
+ * Parses tab-separated values (TSV) from Excel / Airtable / Google Sheets clipboard data,
+ * handling double quotes and embedded newlines correctly.
+ */
+function parseClipboardTable(text: string): string[][] {
+  const clean = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!clean.length) return [];
+
+  // Fast path for simple clipboard text without quotes
+  if (!clean.includes('"')) {
+    const lines = clean.split('\n');
+    if (lines.length > 1 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    return lines.map((line) => line.split('\t'));
+  }
+
+  // Full parser supporting quotes
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    const nextChar = clean[i + 1];
+
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') {
+        currentCell += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        currentCell += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === '\t') {
+        currentRow.push(currentCell);
+        currentCell = '';
+      } else if (char === '\n') {
+        currentRow.push(currentCell);
+        rows.push(currentRow);
+        currentRow = [];
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+  }
+
+  if (currentCell !== '' || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    rows.push(currentRow);
+  }
+
+  if (rows.length > 1 && rows[rows.length - 1].length === 1 && rows[rows.length - 1][0] === '') {
+    rows.pop();
+  }
+
+  return rows;
+}
+
+function normalizeForComparison(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function parseValueForColumn(rawValue: string, column: CustomColumn): any {
+  if (column.type === 'single_select') {
+    const trimmed = rawValue.trim();
+    if (!trimmed || trimmed === '-' || trimmed.toLowerCase() === '(vacío)' || trimmed.toLowerCase() === '(empty)') {
+      return null;
+    }
+    const norm = normalizeForComparison(trimmed);
+    const matched =
+      column.options?.find((o) => o.id.toLowerCase() === trimmed.toLowerCase()) ||
+      column.options?.find((o) => normalizeForComparison(o.label) === norm) ||
+      column.options?.find((o) => normalizeForComparison(o.label).startsWith(norm)) ||
+      column.options?.find((o) => norm.startsWith(normalizeForComparison(o.label)));
+
+    return matched ? matched.id : undefined;
+  }
+
+  if (column.type === 'number') {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return null;
+    const cleaned = trimmed.replace(/\s+/g, '').replace(',', '.');
+    const num = Number(cleaned);
+    return !isNaN(num) ? num : undefined;
+  }
+
+  if (column.type === 'date') {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return null;
+    if (trimmed.match(/^\d{4}-\d{2}-\d{2}$/)) return trimmed;
+    // Check DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (dmyMatch) {
+      const day = dmyMatch[1].padStart(2, '0');
+      const month = dmyMatch[2].padStart(2, '0');
+      const year = dmyMatch[3];
+      return `${year}-${month}-${day}`;
+    }
+    const parsed = Date.parse(trimmed);
+    if (!isNaN(parsed)) {
+      return new Date(parsed).toISOString().split('T')[0];
+    }
+    return trimmed;
+  }
+
+  if (column.type === 'text' || column.type === 'long_text') {
+    return rawValue;
+  }
+
+  return undefined;
 }
 
 function getCellValueAsText(
@@ -303,6 +439,7 @@ interface Props {
   issues: JiraIssue[];
   columns: CustomColumn[];
   onUpdateCustomValue: (issueKey: string, columnId: string, value: any) => Promise<void>;
+  onUpdateCustomValuesBulk?: (updates: Array<{ issueKey: string; columnId: string; value: any }>) => Promise<void>;
   onOpenArchivyDrawer: (issue: JiraIssue) => void;
   onOpenAddColumn: () => void;
   onOpenEditColumn?: (col: CustomColumn) => void;
@@ -318,6 +455,7 @@ export const DataGrid: React.FC<Props> = ({
   issues,
   columns,
   onUpdateCustomValue,
+  onUpdateCustomValuesBulk,
   onOpenArchivyDrawer,
   onOpenAddColumn,
   onOpenEditColumn,
@@ -337,33 +475,16 @@ export const DataGrid: React.FC<Props> = ({
   // Active dropdown open (for single_select)
   const [activeDropdown, setActiveDropdown] = useState<{ issueKey: string; colId: string } | null>(null);
 
-  // Airtable-style cell selection and copy state
+  // Airtable / Excel style cell selection and copy/paste state
   const [selectedCell, setSelectedCell] = useState<{ issueKey: string; colId: string } | null>(null);
+  const [selectionEndCell, setSelectionEndCell] = useState<{ issueKey: string; colId: string } | null>(null);
   const [copiedCell, setCopiedCell] = useState<{ issueKey: string; colId: string } | null>(null);
   const [copyToast, setCopyToast] = useState<{ text: string } | null>(null);
+  const [pasteToast, setPasteToast] = useState<{ message: string; subtext?: string; isError?: boolean } | null>(null);
+  const [pastedCells, setPastedCells] = useState<Set<string>>(new Set());
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleCopyCell = useCallback(
-    (issueKey: string, colId: string) => {
-      const issue = issues.find((i) => i.key === issueKey);
-      if (!issue) return;
-      const textToCopy = getCellValueAsText(issue, colId, columns);
-
-      copyTextToClipboard(textToCopy).then(() => {
-        setCopiedCell({ issueKey, colId });
-        setCopyToast({
-          text: textToCopy.length > 45 ? `${textToCopy.substring(0, 42)}...` : textToCopy,
-        });
-
-        if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-        copyTimeoutRef.current = setTimeout(() => {
-          setCopiedCell(null);
-          setCopyToast(null);
-        }, 2000);
-      });
-    },
-    [issues, columns]
-  );
+  const pasteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPasteTimeRef = useRef<number>(0);
 
   // Column Widths State (allows mouse dragging to expand / shrink columns)
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
@@ -466,7 +587,437 @@ export const DataGrid: React.FC<Props> = ({
     setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
   };
 
-  // Airtable-style Keyboard Navigation & Copy Shortcuts
+  // Flattened visible issues across expanded groups
+  const visibleIssues = useMemo(
+    () => groupedData.flatMap((g) => (collapsedGroups[g.groupKey] ? [] : g.items)),
+    [groupedData, collapsedGroups]
+  );
+
+  // Complete column ID ordering in the grid
+  const allColumnIds = useMemo(
+    () => ['key', 'summary', 'status', 'priority', 'assignee', ...visibleCustomColumns.map((c) => c.id)],
+    [visibleCustomColumns]
+  );
+
+  // Range and Cell Selection Helpers
+  const isCellSelected = useCallback(
+    (issueKey: string, colId: string): boolean => {
+      if (!selectedCell) return false;
+      if (
+        !selectionEndCell ||
+        (selectedCell.issueKey === selectionEndCell.issueKey && selectedCell.colId === selectionEndCell.colId)
+      ) {
+        return selectedCell.issueKey === issueKey && selectedCell.colId === colId;
+      }
+
+      const startRow = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
+      const endRow = visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey);
+      const startCol = allColumnIds.indexOf(selectedCell.colId);
+      const endCol = allColumnIds.indexOf(selectionEndCell.colId);
+
+      if (startRow === -1 || endRow === -1 || startCol === -1 || endCol === -1) {
+        return selectedCell.issueKey === issueKey && selectedCell.colId === colId;
+      }
+
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+
+      const curRow = visibleIssues.findIndex((i) => i.key === issueKey);
+      const curCol = allColumnIds.indexOf(colId);
+
+      return curRow >= minRow && curRow <= maxRow && curCol >= minCol && curCol <= maxCol;
+    },
+    [selectedCell, selectionEndCell, visibleIssues, allColumnIds]
+  );
+
+  const isCellPrimary = useCallback(
+    (issueKey: string, colId: string): boolean => {
+      return selectedCell?.issueKey === issueKey && selectedCell?.colId === colId;
+    },
+    [selectedCell]
+  );
+
+  const getCellClasses = useCallback(
+    (issueKey: string, colId: string): string => {
+      const cellKey = `${issueKey}:${colId}`;
+      if (pastedCells.has(cellKey)) {
+        return 'ring-2 ring-emerald-500 ring-inset bg-emerald-100/70 transition-all duration-300';
+      }
+      if (copiedCell?.issueKey === issueKey && copiedCell?.colId === colId) {
+        return 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40';
+      }
+      if (isCellPrimary(issueKey, colId)) {
+        return 'ring-2 ring-blue-600 ring-inset bg-blue-50/40 z-1';
+      }
+      if (isCellSelected(issueKey, colId)) {
+        return 'ring-1 ring-blue-400 ring-inset bg-blue-50/25';
+      }
+      return '';
+    },
+    [pastedCells, copiedCell, isCellPrimary, isCellSelected]
+  );
+
+  const handleCellClick = useCallback(
+    (issueKey: string, colId: string, e: React.MouseEvent) => {
+      if (e.shiftKey && selectedCell) {
+        setSelectionEndCell({ issueKey, colId });
+      } else {
+        setSelectedCell({ issueKey, colId });
+        setSelectionEndCell(null);
+      }
+    },
+    [selectedCell]
+  );
+
+  // Copy handler (handles single cell or multi-cell rectangular range)
+  const handleCopyCell = useCallback(
+    (specifiedIssueKey?: string, specifiedColId?: string) => {
+      let textToCopy = '';
+      let cellCount = 1;
+
+      if (specifiedIssueKey && specifiedColId) {
+        const issue = issues.find((i) => i.key === specifiedIssueKey);
+        if (!issue) return;
+        textToCopy = getCellValueAsText(issue, specifiedColId, columns);
+        setCopiedCell({ issueKey: specifiedIssueKey, colId: specifiedColId });
+      } else if (
+        selectedCell &&
+        selectionEndCell &&
+        (selectedCell.issueKey !== selectionEndCell.issueKey || selectedCell.colId !== selectionEndCell.colId)
+      ) {
+        const startRow = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
+        const endRow = visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey);
+        const startCol = allColumnIds.indexOf(selectedCell.colId);
+        const endCol = allColumnIds.indexOf(selectionEndCell.colId);
+
+        if (startRow !== -1 && endRow !== -1 && startCol !== -1 && endCol !== -1) {
+          const minRow = Math.min(startRow, endRow);
+          const maxRow = Math.max(startRow, endRow);
+          const minCol = Math.min(startCol, endCol);
+          const maxCol = Math.max(startCol, endCol);
+
+          const rows: string[] = [];
+          cellCount = (maxRow - minRow + 1) * (maxCol - minCol + 1);
+
+          for (let r = minRow; r <= maxRow; r++) {
+            const rowIssue = visibleIssues[r];
+            if (!rowIssue) continue;
+            const colsText: string[] = [];
+            for (let c = minCol; c <= maxCol; c++) {
+              const cid = allColumnIds[c];
+              colsText.push(getCellValueAsText(rowIssue, cid, columns));
+            }
+            rows.push(colsText.join('\t'));
+          }
+          textToCopy = rows.join('\n');
+          setCopiedCell({ issueKey: selectedCell.issueKey, colId: selectedCell.colId });
+        }
+      } else if (selectedCell) {
+        const issue = issues.find((i) => i.key === selectedCell.issueKey);
+        if (!issue) return;
+        textToCopy = getCellValueAsText(issue, selectedCell.colId, columns);
+        setCopiedCell({ issueKey: selectedCell.issueKey, colId: selectedCell.colId });
+      } else {
+        return;
+      }
+
+      copyTextToClipboard(textToCopy).then(() => {
+        setCopyToast({
+          text:
+            cellCount > 1
+              ? lang === 'es'
+                ? `${cellCount} celdas copiadas`
+                : `${cellCount} cells copied`
+              : textToCopy.length > 45
+              ? `${textToCopy.substring(0, 42)}...`
+              : textToCopy,
+        });
+
+        if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = setTimeout(() => {
+          setCopiedCell(null);
+          setCopyToast(null);
+        }, 2000);
+      });
+    },
+    [issues, columns, selectedCell, selectionEndCell, visibleIssues, allColumnIds, lang]
+  );
+
+  // Paste handler (Airtable / Excel matrix paste logic)
+  const handlePasteData = useCallback(
+    async (clipboardText: string, targetCellOverride?: { issueKey: string; colId: string }) => {
+      const activeStart = targetCellOverride || selectedCell;
+      if (!activeStart) return;
+
+      const matrix = parseClipboardTable(clipboardText);
+      if (matrix.length === 0 || matrix[0].length === 0) return;
+
+      const startRowIdx = visibleIssues.findIndex((i) => i.key === activeStart.issueKey);
+      const startColIdx = allColumnIds.indexOf(activeStart.colId);
+      if (startRowIdx === -1 || startColIdx === -1) return;
+
+      const isSingleValue = matrix.length === 1 && matrix[0].length === 1;
+      const hasRange =
+        !targetCellOverride &&
+        selectionEndCell &&
+        (selectionEndCell.issueKey !== selectedCell?.issueKey || selectionEndCell.colId !== selectedCell?.colId);
+
+      const updates: Array<{ issueKey: string; columnId: string; value: any }> = [];
+      const touchedCellKeys = new Set<string>();
+      let attemptedReadOnlyCount = 0;
+
+      if (isSingleValue && hasRange && selectedCell && selectionEndCell) {
+        // Excel/Airtable behavior: If pasting 1 value onto a selected range, fill all editable cells in the range
+        const singleRawVal = matrix[0][0];
+        const endRowIdx = visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey);
+        const endColIdx = allColumnIds.indexOf(selectionEndCell.colId);
+
+        const minRow = Math.min(startRowIdx, endRowIdx !== -1 ? endRowIdx : startRowIdx);
+        const maxRow = Math.max(startRowIdx, endRowIdx !== -1 ? endRowIdx : startRowIdx);
+        const minCol = Math.min(startColIdx, endColIdx !== -1 ? endColIdx : startColIdx);
+        const maxCol = Math.max(startColIdx, endColIdx !== -1 ? endColIdx : startColIdx);
+
+        for (let r = minRow; r <= maxRow; r++) {
+          const issue = visibleIssues[r];
+          if (!issue) continue;
+          for (let c = minCol; c <= maxCol; c++) {
+            const colId = allColumnIds[c];
+            const col = columns.find((colItem) => colItem.id === colId);
+            if (
+              !col ||
+              col.type === 'archivy_link' ||
+              col.type === 'jira_field' ||
+              col.jira_field_key ||
+              col.type === 'formula'
+            ) {
+              attemptedReadOnlyCount++;
+              continue;
+            }
+            const parsedVal = parseValueForColumn(singleRawVal, col);
+            if (parsedVal !== undefined) {
+              updates.push({ issueKey: issue.key, columnId: col.id, value: parsedVal });
+              touchedCellKeys.add(`${issue.key}:${col.id}`);
+            }
+          }
+        }
+      } else {
+        // Multi-cell block paste starting at activeStart
+        for (let r = 0; r < matrix.length; r++) {
+          const targetRowIdx = startRowIdx + r;
+          if (targetRowIdx >= visibleIssues.length) break;
+          const issue = visibleIssues[targetRowIdx];
+
+          for (let c = 0; c < matrix[r].length; c++) {
+            const targetColIdx = startColIdx + c;
+            if (targetColIdx >= allColumnIds.length) break;
+            const colId = allColumnIds[targetColIdx];
+            const col = columns.find((colItem) => colItem.id === colId);
+
+            if (
+              !col ||
+              col.type === 'archivy_link' ||
+              col.type === 'jira_field' ||
+              col.jira_field_key ||
+              col.type === 'formula'
+            ) {
+              attemptedReadOnlyCount++;
+              continue;
+            }
+
+            const parsedVal = parseValueForColumn(matrix[r][c], col);
+            if (parsedVal !== undefined) {
+              updates.push({ issueKey: issue.key, columnId: col.id, value: parsedVal });
+              touchedCellKeys.add(`${issue.key}:${col.id}`);
+            }
+          }
+        }
+      }
+
+      if (updates.length === 0) {
+        if (attemptedReadOnlyCount > 0) {
+          if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+          setPasteToast({
+            message:
+              lang === 'es'
+                ? 'Los campos nativos de Jira y fórmulas son de solo lectura.'
+                : 'Jira native fields and formulas are read-only.',
+            subtext:
+              lang === 'es'
+                ? 'Selecciona una o más columnas personalizadas para pegar.'
+                : 'Select one or more custom columns to paste.',
+            isError: true,
+          });
+          pasteTimeoutRef.current = setTimeout(() => setPasteToast(null), 3500);
+        }
+        return;
+      }
+
+      // Execute updates
+      if (onUpdateCustomValuesBulk) {
+        await onUpdateCustomValuesBulk(updates);
+      } else {
+        await Promise.all(updates.map((u) => onUpdateCustomValue(u.issueKey, u.columnId, u.value)));
+      }
+
+      // Visual feedback highlight
+      setPastedCells(touchedCellKeys);
+      setTimeout(() => {
+        setPastedCells(new Set());
+      }, 1800);
+
+      const preview = updates.length === 1 ? String(updates[0].value ?? '(vacío)') : '';
+      if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+      setPasteToast({
+        message:
+          updates.length === 1
+            ? lang === 'es'
+              ? `Pegado en 1 celda: "${preview.length > 25 ? preview.substring(0, 22) + '...' : preview}"`
+              : `Pasted into 1 cell: "${preview.length > 25 ? preview.substring(0, 22) + '...' : preview}"`
+            : lang === 'es'
+            ? `Pegado exitoso en ${updates.length} celdas`
+            : `Successfully pasted into ${updates.length} cells`,
+        subtext:
+          isSingleValue && updates.length > 1
+            ? lang === 'es'
+              ? 'Valor aplicado en todo el rango seleccionado'
+              : 'Value applied across selected range'
+            : undefined,
+        isError: false,
+      });
+
+      pasteTimeoutRef.current = setTimeout(() => setPasteToast(null), 2500);
+    },
+    [
+      selectedCell,
+      selectionEndCell,
+      visibleIssues,
+      allColumnIds,
+      columns,
+      lang,
+      onUpdateCustomValuesBulk,
+      onUpdateCustomValue,
+    ]
+  );
+
+  // Paste handler for hover action button
+  const handlePasteToCell = useCallback(
+    async (issueKey: string, colId: string) => {
+      try {
+        const text = await readTextFromClipboard();
+        if (text) {
+          await handlePasteData(text, { issueKey, colId });
+        } else {
+          if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+          setPasteToast({
+            message: lang === 'es' ? 'El portapapeles está vacío' : 'Clipboard is empty',
+            isError: true,
+          });
+          pasteTimeoutRef.current = setTimeout(() => setPasteToast(null), 2000);
+        }
+      } catch (err) {
+        console.error('Clipboard read failed:', err);
+        if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+        setPasteToast({
+          message:
+            lang === 'es'
+              ? 'Permiso de portapapeles denegado. Usa Ctrl+V para pegar.'
+              : 'Clipboard permission denied. Use Ctrl+V to paste.',
+          isError: true,
+        });
+        pasteTimeoutRef.current = setTimeout(() => setPasteToast(null), 3000);
+      }
+    },
+    [handlePasteData, lang]
+  );
+
+  // Clear cells on Delete / Backspace
+  const handleClearSelectedCells = useCallback(async () => {
+    if (!selectedCell) return;
+
+    const updates: Array<{ issueKey: string; columnId: string; value: any }> = [];
+    const touchedCellKeys = new Set<string>();
+
+    const startRow = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
+    const endRow = selectionEndCell ? visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey) : startRow;
+    const startCol = allColumnIds.indexOf(selectedCell.colId);
+    const endCol = selectionEndCell ? allColumnIds.indexOf(selectionEndCell.colId) : startCol;
+
+    if (startRow === -1 || startCol === -1) return;
+
+    const minRow = Math.min(startRow, endRow !== -1 ? endRow : startRow);
+    const maxRow = Math.max(startRow, endRow !== -1 ? endRow : startRow);
+    const minCol = Math.min(startCol, endCol !== -1 ? endCol : startCol);
+    const maxCol = Math.max(startCol, endCol !== -1 ? endCol : startCol);
+
+    for (let r = minRow; r <= maxRow; r++) {
+      const issue = visibleIssues[r];
+      if (!issue) continue;
+      for (let c = minCol; c <= maxCol; c++) {
+        const colId = allColumnIds[c];
+        const col = columns.find((ci) => ci.id === colId);
+        if (
+          !col ||
+          col.type === 'archivy_link' ||
+          col.type === 'jira_field' ||
+          col.jira_field_key ||
+          col.type === 'formula'
+        ) {
+          continue;
+        }
+        updates.push({ issueKey: issue.key, columnId: col.id, value: null });
+        touchedCellKeys.add(`${issue.key}:${col.id}`);
+      }
+    }
+
+    if (updates.length === 0) return;
+
+    if (onUpdateCustomValuesBulk) {
+      await onUpdateCustomValuesBulk(updates);
+    } else {
+      await Promise.all(updates.map((u) => onUpdateCustomValue(u.issueKey, u.columnId, u.value)));
+    }
+
+    setPastedCells(touchedCellKeys);
+    setTimeout(() => setPastedCells(new Set()), 1200);
+  }, [
+    selectedCell,
+    selectionEndCell,
+    visibleIssues,
+    allColumnIds,
+    columns,
+    onUpdateCustomValuesBulk,
+    onUpdateCustomValue,
+  ]);
+
+  // Window paste event listener
+  useEffect(() => {
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (!selectedCell) return;
+
+      const text = e.clipboardData?.getData('text/plain') || '';
+      if (!text) return;
+
+      e.preventDefault();
+      lastPasteTimeRef.current = Date.now();
+      handlePasteData(text);
+    };
+
+    window.addEventListener('paste', handlePasteEvent);
+    return () => window.removeEventListener('paste', handlePasteEvent);
+  }, [selectedCell, handlePasteData]);
+
+  // Airtable / Excel Style Keyboard Navigation & Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // If user is currently typing in an input or textarea, let default browser behavior handle it
@@ -484,7 +1035,20 @@ export const DataGrid: React.FC<Props> = ({
       // 1. Copy: Ctrl+C or Cmd+C
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
         e.preventDefault();
-        handleCopyCell(selectedCell.issueKey, selectedCell.colId);
+        handleCopyCell();
+        return;
+      }
+
+      // 1.5. Paste: Ctrl+V or Cmd+V (backup for paste event)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (Date.now() - lastPasteTimeRef.current < 250) {
+          return;
+        }
+        e.preventDefault();
+        lastPasteTimeRef.current = Date.now();
+        readTextFromClipboard().then((text) => {
+          if (text) handlePasteData(text);
+        });
         return;
       }
 
@@ -492,6 +1056,14 @@ export const DataGrid: React.FC<Props> = ({
       if (e.key === 'Escape') {
         e.preventDefault();
         setSelectedCell(null);
+        setSelectionEndCell(null);
+        return;
+      }
+
+      // 2.5 Clear cell(s): Delete or Backspace
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleClearSelectedCells();
         return;
       }
 
@@ -517,30 +1089,31 @@ export const DataGrid: React.FC<Props> = ({
         return;
       }
 
-      // 4. Arrow navigation (Airtable-style keyboard navigation)
+      // 4. Arrow navigation (Airtable/Excel-style keyboard navigation & Shift range selection)
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
-        const allCols = ['key', 'summary', 'status', 'priority', 'assignee', ...visibleCustomColumns.map((c) => c.id)];
-        const currentColIdx = allCols.indexOf(selectedCell.colId);
-        if (currentColIdx === -1) return;
+        const anchor = selectionEndCell || selectedCell;
+        const currentEndColIdx = allColumnIds.indexOf(anchor.colId);
+        const currentEndRowIdx = visibleIssues.findIndex((i) => i.key === anchor.issueKey);
+        if (currentEndColIdx === -1 || currentEndRowIdx === -1) return;
 
-        // Flatten visible issues across active groups
-        const visibleIssues = groupedData.flatMap((g) => (collapsedGroups[g.groupKey] ? [] : g.items));
-        const currentIssueIdx = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
-        if (currentIssueIdx === -1) return;
+        let nextColIdx = currentEndColIdx;
+        let nextRowIdx = currentEndRowIdx;
 
-        let nextColIdx = currentColIdx;
-        let nextIssueIdx = currentIssueIdx;
+        if (e.key === 'ArrowLeft') nextColIdx = Math.max(0, currentEndColIdx - 1);
+        if (e.key === 'ArrowRight') nextColIdx = Math.min(allColumnIds.length - 1, currentEndColIdx + 1);
+        if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, currentEndRowIdx - 1);
+        if (e.key === 'ArrowDown') nextRowIdx = Math.min(visibleIssues.length - 1, currentEndRowIdx + 1);
 
-        if (e.key === 'ArrowLeft') nextColIdx = Math.max(0, currentColIdx - 1);
-        if (e.key === 'ArrowRight') nextColIdx = Math.min(allCols.length - 1, currentColIdx + 1);
-        if (e.key === 'ArrowUp') nextIssueIdx = Math.max(0, currentIssueIdx - 1);
-        if (e.key === 'ArrowDown') nextIssueIdx = Math.min(visibleIssues.length - 1, currentIssueIdx + 1);
-
-        const nextIssue = visibleIssues[nextIssueIdx];
-        const nextColId = allCols[nextColIdx];
+        const nextIssue = visibleIssues[nextRowIdx];
+        const nextColId = allColumnIds[nextColIdx];
         if (nextIssue && nextColId) {
-          setSelectedCell({ issueKey: nextIssue.key, colId: nextColId });
+          if (e.shiftKey) {
+            setSelectionEndCell({ issueKey: nextIssue.key, colId: nextColId });
+          } else {
+            setSelectedCell({ issueKey: nextIssue.key, colId: nextColId });
+            setSelectionEndCell(null);
+          }
         }
       }
     };
@@ -549,12 +1122,14 @@ export const DataGrid: React.FC<Props> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     selectedCell,
+    selectionEndCell,
     handleCopyCell,
+    handlePasteData,
+    handleClearSelectedCells,
     columns,
     issues,
-    visibleCustomColumns,
-    groupedData,
-    collapsedGroups,
+    allColumnIds,
+    visibleIssues,
     onOpenEditColumn,
   ]);
 
@@ -1033,16 +1608,11 @@ export const DataGrid: React.FC<Props> = ({
 
                       {/* Key */}
                       <td
-                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'key' })}
-                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap cursor-pointer transition-all ${
-                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'key'
-                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
-                            : ''
-                        } ${
-                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'key'
-                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
-                            : ''
-                        }`}
+                        onClick={(e) => handleCellClick(issue.key, 'key', e)}
+                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                          issue.key,
+                          'key'
+                        )}`}
                         title={
                           lang === 'es'
                             ? `${issue.key} (Clic para seleccionar, Ctrl+C para copiar)`
@@ -1090,16 +1660,11 @@ export const DataGrid: React.FC<Props> = ({
 
                       {/* Summary */}
                       <td
-                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'summary' })}
-                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${
-                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'summary'
-                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
-                            : ''
-                        } ${
-                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'summary'
-                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
-                            : ''
-                        }`}
+                        onClick={(e) => handleCellClick(issue.key, 'summary', e)}
+                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${getCellClasses(
+                          issue.key,
+                          'summary'
+                        )}`}
                         title={
                           lang === 'es'
                             ? `${issue.summary} (Clic para seleccionar, Ctrl+C para copiar)`
@@ -1126,16 +1691,11 @@ export const DataGrid: React.FC<Props> = ({
 
                       {/* Jira Status */}
                       <td
-                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'status' })}
-                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${
-                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'status'
-                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
-                            : ''
-                        } ${
-                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'status'
-                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
-                            : ''
-                        }`}
+                        onClick={(e) => handleCellClick(issue.key, 'status', e)}
+                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                          issue.key,
+                          'status'
+                        )}`}
                         title={
                           lang === 'es'
                             ? `${issue.jira_status} (Clic para seleccionar, Ctrl+C para copiar)`
@@ -1166,16 +1726,11 @@ export const DataGrid: React.FC<Props> = ({
 
                       {/* Priority */}
                       <td
-                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'priority' })}
-                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${
-                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'priority'
-                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
-                            : ''
-                        } ${
-                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'priority'
-                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
-                            : ''
-                        }`}
+                        onClick={(e) => handleCellClick(issue.key, 'priority', e)}
+                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                          issue.key,
+                          'priority'
+                        )}`}
                         title={
                           lang === 'es'
                             ? `${issue.priority} (Clic para seleccionar, Ctrl+C para copiar)`
@@ -1206,16 +1761,11 @@ export const DataGrid: React.FC<Props> = ({
 
                       {/* Assignee */}
                       <td
-                        onClick={() => setSelectedCell({ issueKey: issue.key, colId: 'assignee' })}
-                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${
-                          selectedCell?.issueKey === issue.key && selectedCell?.colId === 'assignee'
-                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30'
-                            : ''
-                        } ${
-                          copiedCell?.issueKey === issue.key && copiedCell?.colId === 'assignee'
-                            ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40'
-                            : ''
-                        }`}
+                        onClick={(e) => handleCellClick(issue.key, 'assignee', e)}
+                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                          issue.key,
+                          'assignee'
+                        )}`}
                         title={
                           lang === 'es'
                             ? `${issue.assignee_name || t.unassigned} (Clic para seleccionar, Ctrl+C para copiar)`
@@ -1258,18 +1808,17 @@ export const DataGrid: React.FC<Props> = ({
                         const rawCustomValue = issue.custom_values?.[col.id];
                         const isCurrentlyEditing =
                           editingCell?.issueKey === issue.key && editingCell?.colId === col.id;
-                        const isSelected = selectedCell?.issueKey === issue.key && selectedCell?.colId === col.id;
-                        const isCopied = copiedCell?.issueKey === issue.key && copiedCell?.colId === col.id;
 
                         // 1. Archivy Wiki Link Cell
                         if (col.type === 'archivy_link') {
                           return (
                             <td
                               key={col.id}
-                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
-                              className={`px-3 py-1.5 border-r border-gray-100 cursor-pointer transition-all ${
-                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
-                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                              onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                              className={`px-3 py-1.5 border-r border-gray-100 cursor-pointer transition-all ${getCellClasses(
+                                issue.key,
+                                col.id
+                              )}`}
                             >
                               <div className="flex items-center justify-between gap-1">
                                 <button
@@ -1304,14 +1853,15 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
-                              className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${
-                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
-                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                              onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                              className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${getCellClasses(
+                                issue.key,
+                                col.id
+                              )}`}
                               title={
                                 lang === 'es'
-                                  ? `${currentOpt ? currentOpt.label : 'Sin opción'} (Clic para seleccionar, Ctrl+C para copiar, doble clic para elegir)`
-                                  : `${currentOpt ? currentOpt.label : 'No option'} (Click to select, Ctrl+C to copy, double click to choose)`
+                                  ? `${currentOpt ? currentOpt.label : 'Sin opción'} (Clic para seleccionar, Ctrl+C copiar, Ctrl+V pegar, doble clic para elegir)`
+                                  : `${currentOpt ? currentOpt.label : 'No option'} (Click to select, Ctrl+C to copy, Ctrl+V to paste, double click to choose)`
                               }
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
@@ -1356,6 +1906,17 @@ export const DataGrid: React.FC<Props> = ({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      handlePasteToCell(issue.key, col.id);
+                                    }}
+                                    className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-emerald-600 hover:bg-emerald-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Pegar opción (Ctrl+V)' : 'Paste option (Ctrl+V)'}
+                                  >
+                                    <ClipboardPaste className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setActiveDropdown({ issueKey: issue.key, colId: col.id });
                                     }}
                                     className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-colors cursor-pointer"
@@ -1389,10 +1950,11 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
-                              className={`px-3 py-1.5 border-r border-gray-100 max-w-[280px] bg-slate-50/20 text-gray-800 cursor-pointer group/cell transition-all ${
-                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
-                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                              onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                              className={`px-3 py-1.5 border-r border-gray-100 max-w-[280px] bg-slate-50/20 text-gray-800 cursor-pointer group/cell transition-all ${getCellClasses(
+                                issue.key,
+                                col.id
+                              )}`}
                               title={`Jira (${fieldKey}) - Clic para seleccionar, Ctrl+C para copiar`}
                             >
                               <div className="flex items-center justify-between gap-1">
@@ -1432,10 +1994,11 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
-                              onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
-                              className={`px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800 cursor-pointer hover:bg-indigo-50/40 group/cell transition-all ${
-                                isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
-                              } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                              onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                              className={`px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800 cursor-pointer hover:bg-indigo-50/40 group/cell transition-all ${getCellClasses(
+                                issue.key,
+                                col.id
+                              )}`}
                               title={
                                 col.formula
                                   ? `${col.name} = ${col.formula}\nResultado: ${result ?? '(vacío)'}\n(${
@@ -1509,14 +2072,15 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
-                            onClick={() => setSelectedCell({ issueKey: issue.key, colId: col.id })}
-                            className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${
-                              isSelected ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/30' : ''
-                            } ${isCopied ? 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40' : ''}`}
+                            onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                            className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${getCellClasses(
+                              issue.key,
+                              col.id
+                            )}`}
                             title={
                               lang === 'es'
-                                ? 'Clic para seleccionar (Ctrl+C copiar), doble clic o lápiz para editar'
-                                : 'Click to select (Ctrl+C to copy), double click or pencil to edit'
+                                ? 'Clic para seleccionar (Ctrl+C copiar, Ctrl+V pegar), doble clic o lápiz para editar'
+                                : 'Click to select (Ctrl+C to copy, Ctrl+V to paste), double click or pencil to edit'
                             }
                             onDoubleClick={(e) => {
                               e.stopPropagation();
@@ -1574,6 +2138,17 @@ export const DataGrid: React.FC<Props> = ({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      handlePasteToCell(issue.key, col.id);
+                                    }}
+                                    className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-emerald-600 hover:bg-emerald-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Pegar texto (Ctrl+V)' : 'Paste text (Ctrl+V)'}
+                                  >
+                                    <ClipboardPaste className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setEditingCell({
                                         issueKey: issue.key,
                                         colId: col.id,
@@ -1611,6 +2186,32 @@ export const DataGrid: React.FC<Props> = ({
             {copyToast.text ? `"${copyToast.text}"` : lang === 'es' ? '(vacío)' : '(empty)'}
           </span>
           <span className="text-[10px] text-gray-400 border-l border-gray-700 pl-2">Ctrl+C</span>
+        </div>
+      )}
+
+      {/* Airtable-style Floating Paste Toast */}
+      {pasteToast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 text-xs font-medium rounded-full shadow-2xl border backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none ${
+            pasteToast.isError
+              ? 'bg-rose-950/95 text-rose-100 border-rose-800'
+              : 'bg-gray-900/95 text-white border-gray-700'
+          }`}
+        >
+          {pasteToast.isError ? (
+            <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          ) : (
+            <ClipboardPaste className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+          )}
+          <div className="flex flex-col">
+            <span className="font-semibold text-white">{pasteToast.message}</span>
+            {pasteToast.subtext && (
+              <span className="text-[10px] text-gray-300">{pasteToast.subtext}</span>
+            )}
+          </div>
+          <span className="text-[10px] text-gray-400 border-l border-gray-700 pl-2 font-mono">
+            Ctrl+V
+          </span>
         </div>
       )}
     </div>

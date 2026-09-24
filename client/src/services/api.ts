@@ -73,6 +73,18 @@ export async function setCustomValue(issueKey: string, columnId: string, value: 
   if (!res.ok) throw new Error('Error al guardar valor personalizado');
 }
 
+export async function bulkSetCustomValues(
+  items: Array<{ issue_key: string; column_id: string; value: any }>
+): Promise<{ status: string; updated_count: number }> {
+  const res = await fetch(`${API_BASE}/issues/custom-values/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) throw new Error('Error al guardar valores personalizados en lote');
+  return res.json();
+}
+
 export async function fetchFilters(): Promise<JiraFilter[]> {
   const res = await fetch(`${API_BASE}/filters`);
   if (!res.ok) throw new Error('Error al obtener filtros de Jira');

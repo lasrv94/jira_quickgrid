@@ -156,6 +156,14 @@ class SetCustomValueRequest(BaseModel):
     column_id: str
     value: Any
 
+class BulkSetCustomValueItem(BaseModel):
+    issue_key: str
+    column_id: str
+    value: Any
+
+class BulkSetCustomValuesRequest(BaseModel):
+    items: List[BulkSetCustomValueItem]
+
 class IssueOut(BaseModel):
     key: str
     jira_id: Optional[str] = None
