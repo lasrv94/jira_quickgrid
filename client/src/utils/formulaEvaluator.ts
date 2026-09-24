@@ -61,14 +61,21 @@ export function getFieldValueForFormula(
   return null;
 }
 
-// Token Types for safe Lexer
+// ----------------- AST DEFINITIONS -----------------
+
+export type ASTNode =
+  | { type: 'Literal'; value: any }
+  | { type: 'Field'; fieldName: string }
+  | { type: 'BinaryOp'; op: string; left: ASTNode; right: ASTNode }
+  | { type: 'UnaryOp'; op: string; operand: ASTNode }
+  | { type: 'If'; condition: ASTNode; thenBranch: ASTNode; elseBranch: ASTNode }
+  | { type: 'Call'; functionName: string; args: ASTNode[] };
+
+// ----------------- TOKENIZER -----------------
+
 type TokenType =
-  | 'IF'
-  | 'IS_EMPTY'
-  | 'NOT_EMPTY'
-  | 'CONTAINS'
-  | 'AND'
-  | 'OR'
+  | 'KEYWORD'
+  | 'IDENTIFIER'
   | 'FIELD'
   | 'STRING'
   | 'NUMBER'
@@ -85,6 +92,25 @@ interface Token {
   value: string;
 }
 
+const KNOWN_KEYWORDS = new Set([
+  'IF',
+  'IFS',
+  'SWITCH',
+  'IS_EMPTY',
+  'NOT_EMPTY',
+  'CONTAINS',
+  'UPPER',
+  'LOWER',
+  'CONCAT',
+  'LEN',
+  'TRIM',
+  'ROUND',
+  'COALESCE',
+  'AND',
+  'OR',
+  'NOT',
+]);
+
 function tokenize(input: string): Token[] {
   const tokens: Token[] = [];
   let i = 0;
@@ -93,11 +119,13 @@ function tokenize(input: string): Token[] {
   while (i < len) {
     const ch = input[i];
 
+    // Whitespace
     if (/\s/.test(ch)) {
       i++;
       continue;
     }
 
+    // Field reference: {field_name}
     if (ch === '{') {
       let field = '';
       i++;
@@ -110,6 +138,7 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
+    // Quoted strings: "string" or 'string'
     if (ch === '"' || ch === "'") {
       const quote = ch;
       let str = '';
@@ -128,18 +157,17 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
+    // Parentheses & Comma
     if (ch === '(') {
       tokens.push({ type: 'LPAREN', value: '(' });
       i++;
       continue;
     }
-
     if (ch === ')') {
       tokens.push({ type: 'RPAREN', value: ')' });
       i++;
       continue;
     }
-
     if (ch === ',') {
       tokens.push({ type: 'COMMA', value: ',' });
       i++;
@@ -149,9 +177,20 @@ function tokenize(input: string): Token[] {
     // Comparison Operators: ==, !=, <=, >=, <>, =, <, >
     if (ch === '=' || ch === '!' || ch === '<' || ch === '>') {
       const next = i + 1 < len ? input[i + 1] : '';
-      if ((ch === '=' && next === '=') || (ch === '!' && next === '=') || (ch === '<' && next === '=') || (ch === '>' && next === '=') || (ch === '<' && next === '>')) {
+      if (
+        (ch === '=' && next === '=') ||
+        (ch === '!' && next === '=') ||
+        (ch === '<' && next === '=') ||
+        (ch === '>' && next === '=') ||
+        (ch === '<' && next === '>')
+      ) {
         tokens.push({ type: 'OP_COMPARE', value: ch + next });
         i += 2;
+        continue;
+      }
+      if (ch === '!') {
+        tokens.push({ type: 'KEYWORD', value: 'NOT' });
+        i++;
         continue;
       }
       tokens.push({ type: 'OP_COMPARE', value: ch });
@@ -168,17 +207,17 @@ function tokenize(input: string): Token[] {
 
     // Logical Operators: &&, ||
     if (ch === '&' && i + 1 < len && input[i + 1] === '&') {
-      tokens.push({ type: 'AND', value: '&&' });
+      tokens.push({ type: 'KEYWORD', value: 'AND' });
       i += 2;
       continue;
     }
     if (ch === '|' && i + 1 < len && input[i + 1] === '|') {
-      tokens.push({ type: 'OR', value: '||' });
+      tokens.push({ type: 'KEYWORD', value: 'OR' });
       i += 2;
       continue;
     }
 
-    // Numbers
+    // Numbers: 123, 123.45
     if (/[0-9]/.test(ch)) {
       let num = '';
       while (i < len && /[0-9.]/.test(input[i])) {
@@ -189,35 +228,25 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
-    // Identifiers or keywords
-    if (/[a-zA-Z_]/.test(ch)) {
+    // Identifiers & Unicode words (supports Spanish accents á, é, í, ó, ú, ñ, etc.)
+    if (/[\p{L}_]/u.test(ch)) {
       let id = '';
-      while (i < len && /[a-zA-Z0-9_]/.test(input[i])) {
+      while (i < len && /[\p{L}0-9_]/u.test(input[i])) {
         id += input[i];
         i++;
       }
       const upper = id.toUpperCase();
-      if (upper === 'IF') {
-        tokens.push({ type: 'IF', value: 'IF' });
-      } else if (upper === 'AND') {
-        tokens.push({ type: 'AND', value: 'AND' });
-      } else if (upper === 'OR') {
-        tokens.push({ type: 'OR', value: 'OR' });
-      } else if (upper === 'IS_EMPTY') {
-        tokens.push({ type: 'IS_EMPTY', value: 'IS_EMPTY' });
-      } else if (upper === 'NOT_EMPTY') {
-        tokens.push({ type: 'NOT_EMPTY', value: 'NOT_EMPTY' });
-      } else if (upper === 'CONTAINS') {
-        tokens.push({ type: 'CONTAINS', value: 'CONTAINS' });
-      } else if (upper === 'TRUE' || upper === 'FALSE') {
+      if (upper === 'TRUE' || upper === 'FALSE') {
         tokens.push({ type: 'BOOLEAN', value: upper });
+      } else if (KNOWN_KEYWORDS.has(upper)) {
+        tokens.push({ type: 'KEYWORD', value: upper });
       } else {
-        // Treat bare word identifier as string or field
-        tokens.push({ type: 'STRING', value: id });
+        tokens.push({ type: 'IDENTIFIER', value: id });
       }
       continue;
     }
 
+    // Any other character fallback
     i++;
   }
 
@@ -225,195 +254,379 @@ function tokenize(input: string): Token[] {
   return tokens;
 }
 
-/**
- * Safe Recursive Descent Evaluator for Formulas.
- */
-class FormulaParser {
+// ----------------- PARSER -----------------
+
+export class FormulaParser {
   private tokens: Token[];
   private pos = 0;
-  private issue: JiraIssue;
-  private columns: CustomColumn[];
 
-  constructor(tokens: Token[], issue: JiraIssue, columns: CustomColumn[]) {
+  constructor(tokens: Token[]) {
     this.tokens = tokens;
-    this.issue = issue;
-    this.columns = columns;
   }
 
   private peek(): Token {
     return this.tokens[this.pos] || { type: 'EOF', value: '' };
   }
 
-  private consume(expected?: TokenType): Token {
+  private consume(expectedType?: TokenType, expectedValue?: string): Token {
     const t = this.peek();
-    if (expected && t.type !== expected) {
-      throw new Error(`Expected token ${expected} but got ${t.type} (${t.value})`);
+    if (expectedType && t.type !== expectedType) {
+      throw new Error(`Se esperaba '${expectedType}' pero se encontró '${t.type}' (${t.value})`);
+    }
+    if (expectedValue && t.value.toUpperCase() !== expectedValue.toUpperCase()) {
+      throw new Error(`Se esperaba '${expectedValue}' pero se encontró '${t.value}'`);
     }
     this.pos++;
     return t;
   }
 
-  public parse(): any {
-    if (this.peek().type === 'EOF') return null;
-    const res = this.parseExpression();
-    return res;
+  public parse(): ASTNode {
+    if (this.peek().type === 'EOF') {
+      return { type: 'Literal', value: null };
+    }
+    const node = this.parseLogicalOr();
+    return node;
   }
 
-  private parseExpression(): any {
-    return this.parseLogicalOr();
-  }
-
-  private parseLogicalOr(): any {
+  private parseLogicalOr(): ASTNode {
     let left = this.parseLogicalAnd();
-    while (this.peek().type === 'OR') {
-      this.consume('OR');
+    while (this.peek().type === 'KEYWORD' && this.peek().value.toUpperCase() === 'OR') {
+      this.consume('KEYWORD');
       const right = this.parseLogicalAnd();
-      left = Boolean(left) || Boolean(right);
+      left = { type: 'BinaryOp', op: 'OR', left, right };
     }
     return left;
   }
 
-  private parseLogicalAnd(): any {
+  private parseLogicalAnd(): ASTNode {
     let left = this.parseComparison();
-    while (this.peek().type === 'AND') {
-      this.consume('AND');
+    while (this.peek().type === 'KEYWORD' && this.peek().value.toUpperCase() === 'AND') {
+      this.consume('KEYWORD');
       const right = this.parseComparison();
-      left = Boolean(left) && Boolean(right);
+      left = { type: 'BinaryOp', op: 'AND', left, right };
     }
     return left;
   }
 
-  private parseComparison(): any {
+  private parseComparison(): ASTNode {
     let left = this.parseAdditive();
 
     const t = this.peek();
-    if (t.type === 'OP_COMPARE' || t.type === 'CONTAINS') {
+    if (t.type === 'OP_COMPARE' || (t.type === 'KEYWORD' && t.value.toUpperCase() === 'CONTAINS')) {
       const op = this.consume().value.toUpperCase();
       const right = this.parseAdditive();
+      return { type: 'BinaryOp', op, left, right };
+    }
 
-      const strLeft = left === null || left === undefined ? '' : String(left).toLowerCase().trim();
-      const strRight = right === null || right === undefined ? '' : String(right).toLowerCase().trim();
-      const numLeft = Number(left);
-      const numRight = Number(right);
-      const bothNumeric = !isNaN(numLeft) && !isNaN(numRight) && strLeft !== '' && strRight !== '';
+    return left;
+  }
+
+  private parseAdditive(): ASTNode {
+    let left = this.parseMultiplicative();
+    while (this.peek().type === 'OP_MATH' && (this.peek().value === '+' || this.peek().value === '-')) {
+      const op = this.consume().value;
+      const right = this.parseMultiplicative();
+      left = { type: 'BinaryOp', op, left, right };
+    }
+    return left;
+  }
+
+  private parseMultiplicative(): ASTNode {
+    let left = this.parseUnary();
+    while (this.peek().type === 'OP_MATH' && (this.peek().value === '*' || this.peek().value === '/')) {
+      const op = this.consume().value;
+      const right = this.parseUnary();
+      left = { type: 'BinaryOp', op, left, right };
+    }
+    return left;
+  }
+
+  private parseUnary(): ASTNode {
+    const t = this.peek();
+    if (t.type === 'KEYWORD' && t.value.toUpperCase() === 'NOT') {
+      this.consume('KEYWORD');
+      const operand = this.parseUnary();
+      return { type: 'UnaryOp', op: 'NOT', operand };
+    }
+    if (t.type === 'OP_MATH' && t.value === '-') {
+      this.consume('OP_MATH');
+      const operand = this.parseUnary();
+      return { type: 'UnaryOp', op: '-', operand };
+    }
+    return this.parsePrimary();
+  }
+
+  private parsePrimary(): ASTNode {
+    const t = this.peek();
+
+    // 1. IF(condition, thenExpr, elseExpr)
+    if (t.type === 'KEYWORD' && t.value.toUpperCase() === 'IF') {
+      this.consume('KEYWORD');
+      this.consume('LPAREN');
+      const condition = this.parseLogicalOr();
+      this.consume('COMMA');
+      const thenBranch = this.parseLogicalOr();
+      this.consume('COMMA');
+      const elseBranch = this.parseLogicalOr();
+      this.consume('RPAREN');
+      return { type: 'If', condition, thenBranch, elseBranch };
+    }
+
+    // 2. Generic function calls: IFS(...), SWITCH(...), IS_EMPTY(...), NOT_EMPTY(...), CONCAT(...), etc.
+    if (t.type === 'KEYWORD' || (t.type === 'IDENTIFIER' && this.tokens[this.pos + 1]?.type === 'LPAREN')) {
+      const fnName = this.consume().value.toUpperCase();
+      this.consume('LPAREN');
+      const args: ASTNode[] = [];
+      if (this.peek().type !== 'RPAREN') {
+        args.push(this.parseLogicalOr());
+        while (this.peek().type === 'COMMA') {
+          this.consume('COMMA');
+          args.push(this.parseLogicalOr());
+        }
+      }
+      this.consume('RPAREN');
+      return { type: 'Call', functionName: fnName, args };
+    }
+
+    // 3. Field reference: {priority}, {summary}, {custom_col}
+    if (t.type === 'FIELD') {
+      this.consume('FIELD');
+      return { type: 'Field', fieldName: t.value };
+    }
+
+    // 4. Number Literal
+    if (t.type === 'NUMBER') {
+      this.consume('NUMBER');
+      return { type: 'Literal', value: Number(t.value) };
+    }
+
+    // 5. String Literal: "Aprobado", 'High'
+    if (t.type === 'STRING') {
+      this.consume('STRING');
+      return { type: 'Literal', value: t.value };
+    }
+
+    // 6. Boolean Literal: TRUE, FALSE
+    if (t.type === 'BOOLEAN') {
+      this.consume('BOOLEAN');
+      return { type: 'Literal', value: t.value === 'TRUE' };
+    }
+
+    // 7. Unquoted Identifier (treated gracefully as string literal or field name)
+    if (t.type === 'IDENTIFIER') {
+      this.consume('IDENTIFIER');
+      // If user typed consecutive words without quotes like `En Revisión`
+      let combined = t.value;
+      while (this.peek().type === 'IDENTIFIER') {
+        combined += ' ' + this.consume('IDENTIFIER').value;
+      }
+      return { type: 'Literal', value: combined };
+    }
+
+    // 8. Parenthesized expression: (expr)
+    if (t.type === 'LPAREN') {
+      this.consume('LPAREN');
+      const expr = this.parseLogicalOr();
+      this.consume('RPAREN');
+      return expr;
+    }
+
+    // Fallback error
+    throw new Error(`Token inesperado en la fórmula: ${t.type} (${t.value})`);
+  }
+}
+
+// ----------------- EVALUATOR -----------------
+
+export function evaluateAST(
+  node: ASTNode,
+  issue: JiraIssue,
+  columns: CustomColumn[] = []
+): any {
+  if (!node) return null;
+
+  switch (node.type) {
+    case 'Literal':
+      return node.value;
+
+    case 'Field':
+      return getFieldValueForFormula(issue, node.fieldName, columns);
+
+    case 'UnaryOp': {
+      const val = evaluateAST(node.operand, issue, columns);
+      if (node.op === 'NOT') return !val;
+      if (node.op === '-') return -Number(val);
+      return val;
+    }
+
+    case 'If': {
+      // Lazy evaluation: only evaluates the selected branch!
+      const cond = evaluateAST(node.condition, issue, columns);
+      if (Boolean(cond)) {
+        return evaluateAST(node.thenBranch, issue, columns);
+      } else {
+        return evaluateAST(node.elseBranch, issue, columns);
+      }
+    }
+
+    case 'BinaryOp': {
+      const op = node.op.toUpperCase();
+
+      // Short-circuit logical operators
+      if (op === 'AND') {
+        const leftVal = evaluateAST(node.left, issue, columns);
+        if (!leftVal) return false;
+        return Boolean(evaluateAST(node.right, issue, columns));
+      }
+      if (op === 'OR') {
+        const leftVal = evaluateAST(node.left, issue, columns);
+        if (leftVal) return true;
+        return Boolean(evaluateAST(node.right, issue, columns));
+      }
+
+      const left = evaluateAST(node.left, issue, columns);
+      const right = evaluateAST(node.right, issue, columns);
+
+      // Math
+      if (op === '+') {
+        const numL = Number(left);
+        const numR = Number(right);
+        if (!isNaN(numL) && !isNaN(numR) && left !== '' && right !== '' && left !== null && right !== null) {
+          return numL + numR;
+        }
+        return String(left ?? '') + String(right ?? '');
+      }
+      if (op === '-') return Number(left) - Number(right);
+      if (op === '*') return Number(left) * Number(right);
+      if (op === '/') return Number(right) === 0 ? 0 : Number(left) / Number(right);
+
+      // Comparisons
+      const strL = left === null || left === undefined ? '' : String(left).toLowerCase().trim();
+      const strR = right === null || right === undefined ? '' : String(right).toLowerCase().trim();
+      const numL = Number(left);
+      const numR = Number(right);
+      const bothNumeric = !isNaN(numL) && !isNaN(numR) && strL !== '' && strR !== '';
 
       switch (op) {
         case '=':
         case '==':
-          return bothNumeric ? numLeft === numRight : strLeft === strRight;
+          return bothNumeric ? numL === numR : strL === strR;
         case '!=':
         case '<>':
-          return bothNumeric ? numLeft !== numRight : strLeft !== strRight;
+          return bothNumeric ? numL !== numR : strL !== strR;
         case '>':
-          return bothNumeric ? numLeft > numRight : strLeft > strRight;
+          return bothNumeric ? numL > numR : strL > strR;
         case '>=':
-          return bothNumeric ? numLeft >= numRight : strLeft >= strRight;
+          return bothNumeric ? numL >= numR : strL >= strR;
         case '<':
-          return bothNumeric ? numLeft < numRight : strLeft < strRight;
+          return bothNumeric ? numL < numR : strL < strR;
         case '<=':
-          return bothNumeric ? numLeft <= numRight : strLeft <= strRight;
+          return bothNumeric ? numL <= numR : strL <= strR;
         case 'CONTAINS':
-          return strLeft.includes(strRight);
+          return strL.includes(strR);
         default:
           return false;
       }
     }
 
-    return left;
-  }
+    case 'Call': {
+      const fn = node.functionName;
 
-  private parseAdditive(): any {
-    let left = this.parseMultiplicative();
-    while (this.peek().type === 'OP_MATH' && (this.peek().value === '+' || this.peek().value === '-')) {
-      const op = this.consume().value;
-      const right = this.parseMultiplicative();
-      if (op === '+') {
-        const numL = Number(left);
-        const numR = Number(right);
-        if (!isNaN(numL) && !isNaN(numR)) left = numL + numR;
-        else left = String(left ?? '') + String(right ?? '');
-      } else {
-        left = Number(left) - Number(right);
+      if (fn === 'IS_EMPTY') {
+        const val = evaluateAST(node.args[0], issue, columns);
+        return val === null || val === undefined || String(val).trim() === '';
       }
+
+      if (fn === 'NOT_EMPTY') {
+        const val = evaluateAST(node.args[0], issue, columns);
+        return val !== null && val !== undefined && String(val).trim() !== '';
+      }
+
+      if (fn === 'CONTAINS') {
+        const text = String(evaluateAST(node.args[0], issue, columns) ?? '').toLowerCase();
+        const search = String(evaluateAST(node.args[1], issue, columns) ?? '').toLowerCase();
+        return text.includes(search);
+      }
+
+      if (fn === 'IFS') {
+        // IFS(cond1, val1, cond2, val2, ..., defaultVal)
+        for (let i = 0; i < node.args.length - 1; i += 2) {
+          const cond = evaluateAST(node.args[i], issue, columns);
+          if (Boolean(cond)) {
+            return evaluateAST(node.args[i + 1], issue, columns);
+          }
+        }
+        // If odd number of arguments, last is the default fallback
+        if (node.args.length % 2 === 1) {
+          return evaluateAST(node.args[node.args.length - 1], issue, columns);
+        }
+        return null;
+      }
+
+      if (fn === 'SWITCH') {
+        // SWITCH(testVal, case1, res1, case2, res2, ..., defaultVal)
+        if (node.args.length < 2) return null;
+        const testVal = evaluateAST(node.args[0], issue, columns);
+        const testStr = String(testVal ?? '').toLowerCase().trim();
+
+        for (let i = 1; i < node.args.length - 1; i += 2) {
+          const caseVal = evaluateAST(node.args[i], issue, columns);
+          const caseStr = String(caseVal ?? '').toLowerCase().trim();
+          if (testStr === caseStr) {
+            return evaluateAST(node.args[i + 1], issue, columns);
+          }
+        }
+        // If default present
+        if (node.args.length % 2 === 0) {
+          return evaluateAST(node.args[node.args.length - 1], issue, columns);
+        }
+        return null;
+      }
+
+      if (fn === 'CONCAT') {
+        return node.args.map((a) => String(evaluateAST(a, issue, columns) ?? '')).join('');
+      }
+
+      if (fn === 'UPPER') {
+        return String(evaluateAST(node.args[0], issue, columns) ?? '').toUpperCase();
+      }
+
+      if (fn === 'LOWER') {
+        return String(evaluateAST(node.args[0], issue, columns) ?? '').toLowerCase();
+      }
+
+      if (fn === 'TRIM') {
+        return String(evaluateAST(node.args[0], issue, columns) ?? '').trim();
+      }
+
+      if (fn === 'LEN') {
+        return String(evaluateAST(node.args[0], issue, columns) ?? '').length;
+      }
+
+      if (fn === 'ROUND') {
+        const num = Number(evaluateAST(node.args[0], issue, columns));
+        const dec = node.args[1] ? Number(evaluateAST(node.args[1], issue, columns)) : 0;
+        return isNaN(num) ? 0 : Number(num.toFixed(dec));
+      }
+
+      if (fn === 'COALESCE') {
+        for (const arg of node.args) {
+          const val = evaluateAST(arg, issue, columns);
+          if (val !== null && val !== undefined && String(val).trim() !== '') {
+            return val;
+          }
+        }
+        return null;
+      }
+
+      return null;
     }
-    return left;
   }
 
-  private parseMultiplicative(): any {
-    let left = this.parsePrimary();
-    while (this.peek().type === 'OP_MATH' && (this.peek().value === '*' || this.peek().value === '/')) {
-      const op = this.consume().value;
-      const right = this.parsePrimary();
-      if (op === '*') left = Number(left) * Number(right);
-      else left = Number(right) === 0 ? 0 : Number(left) / Number(right);
-    }
-    return left;
-  }
-
-  private parsePrimary(): any {
-    const t = this.peek();
-
-    if (t.type === 'IF') {
-      this.consume('IF');
-      this.consume('LPAREN');
-      const condition = this.parseExpression();
-      this.consume('COMMA');
-      const trueVal = this.parseExpression();
-      this.consume('COMMA');
-      const falseVal = this.parseExpression();
-      this.consume('RPAREN');
-
-      return Boolean(condition) ? trueVal : falseVal;
-    }
-
-    if (t.type === 'IS_EMPTY') {
-      this.consume('IS_EMPTY');
-      this.consume('LPAREN');
-      const val = this.parseExpression();
-      this.consume('RPAREN');
-      return val === null || val === undefined || String(val).trim() === '';
-    }
-
-    if (t.type === 'NOT_EMPTY') {
-      this.consume('NOT_EMPTY');
-      this.consume('LPAREN');
-      const val = this.parseExpression();
-      this.consume('RPAREN');
-      return val !== null && val !== undefined && String(val).trim() !== '';
-    }
-
-    if (t.type === 'FIELD') {
-      this.consume('FIELD');
-      return getFieldValueForFormula(this.issue, t.value, this.columns);
-    }
-
-    if (t.type === 'NUMBER') {
-      this.consume('NUMBER');
-      return Number(t.value);
-    }
-
-    if (t.type === 'STRING') {
-      this.consume('STRING');
-      return t.value;
-    }
-
-    if (t.type === 'BOOLEAN') {
-      this.consume('BOOLEAN');
-      return t.value === 'TRUE';
-    }
-
-    if (t.type === 'LPAREN') {
-      this.consume('LPAREN');
-      const expr = this.parseExpression();
-      this.consume('RPAREN');
-      return expr;
-    }
-
-    // Default fallback
-    this.consume();
-    return null;
-  }
+  return null;
 }
+
+// ----------------- PUBLIC API -----------------
 
 /**
  * Safely evaluates a formula expression for an issue.
@@ -427,8 +640,9 @@ export function evaluateFormula(
 
   try {
     const tokens = tokenize(formula);
-    const parser = new FormulaParser(tokens, issue, columns);
-    const result = parser.parse();
+    const parser = new FormulaParser(tokens);
+    const ast = parser.parse();
+    const result = evaluateAST(ast, issue, columns);
     return result;
   } catch (err) {
     return 'Error: Formula';
@@ -443,20 +657,9 @@ export function validateFormula(formula: string): { valid: boolean; error?: stri
     return { valid: false, error: 'La fórmula no puede estar vacía' };
   }
 
-  const dummyIssue: JiraIssue = {
-    key: 'TEST-1',
-    summary: 'Test summary',
-    jira_status: 'Done',
-    jira_status_category: 'Done',
-    issue_type: 'Task',
-    priority: 'High',
-    is_archived_in_jira: false,
-    custom_values: {},
-  };
-
   try {
     const tokens = tokenize(formula);
-    const parser = new FormulaParser(tokens, dummyIssue, []);
+    const parser = new FormulaParser(tokens);
     parser.parse();
     return { valid: true };
   } catch (err: any) {
@@ -465,7 +668,7 @@ export function validateFormula(formula: string): { valid: boolean; error?: stri
 }
 
 /**
- * Helper to build an IF condition formula string from UI fields.
+ * Helper to build an IF condition formula string from UI fields with smart operand quoting.
  */
 export function buildIfFormula(
   fieldId: string,
@@ -474,17 +677,38 @@ export function buildIfFormula(
   trueVal: string,
   falseVal: string
 ): string {
-  const safeField = fieldId ? `{${fieldId}}` : '{priority}';
+  const safeField = fieldId ? (fieldId.startsWith('{') ? fieldId : `{${fieldId}}`) : '{priority}';
 
-  let formattedTrue = trueVal.trim();
-  if (!/^[0-9]+(\.[0-9]+)?$/.test(formattedTrue)) {
-    formattedTrue = `"${formattedTrue.replace(/"/g, '\\"')}"`;
-  }
+  const formatOperand = (val: string): string => {
+    const trimmed = (val ?? '').trim();
+    if (!trimmed) return '""';
+    // Numbers: e.g. 1, 0, -5, 3.14
+    if (/^-?[0-9]+(\.[0-9]+)?$/.test(trimmed)) return trimmed;
+    // Already quoted: e.g. "Aprobado" or 'Aprobado'
+    if (
+      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+      return trimmed;
+    }
+    // Field reference: e.g. {assignee} or {summary}
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      return trimmed;
+    }
+    // Boolean keywords: TRUE, FALSE
+    if (trimmed.toUpperCase() === 'TRUE' || trimmed.toUpperCase() === 'FALSE') {
+      return trimmed.toUpperCase();
+    }
+    // Nested formula or function call: e.g. IF(...), CONCAT(...)
+    if (/^[A-Za-z_]+\(.*\)$/.test(trimmed)) {
+      return trimmed;
+    }
+    // Otherwise, wrap in quotes cleanly
+    return `"${trimmed.replace(/"/g, '\\"')}"`;
+  };
 
-  let formattedFalse = falseVal.trim();
-  if (!/^[0-9]+(\.[0-9]+)?$/.test(formattedFalse)) {
-    formattedFalse = `"${formattedFalse.replace(/"/g, '\\"')}"`;
-  }
+  const formattedTrue = formatOperand(trueVal);
+  const formattedFalse = formatOperand(falseVal);
 
   if (operator === 'IS_EMPTY') {
     return `IF(IS_EMPTY(${safeField}), ${formattedTrue}, ${formattedFalse})`;
@@ -493,13 +717,6 @@ export function buildIfFormula(
     return `IF(NOT_EMPTY(${safeField}), ${formattedTrue}, ${formattedFalse})`;
   }
 
-  let formattedCompare: string;
-  if (/^[0-9]+(\.[0-9]+)?$/.test(compareValue.trim())) {
-    formattedCompare = compareValue.trim();
-  } else {
-    formattedCompare = `"${compareValue.replace(/"/g, '\\"')}"`;
-  }
-
+  const formattedCompare = formatOperand(compareValue);
   return `IF(${safeField} ${operator} ${formattedCompare}, ${formattedTrue}, ${formattedFalse})`;
 }
-

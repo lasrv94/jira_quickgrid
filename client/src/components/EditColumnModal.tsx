@@ -71,7 +71,7 @@ export const EditColumnModal: React.FC<Props> = ({
       await onUpdateColumn(column.id, {
         name: name.trim(),
         type,
-        options: type === 'single_select' ? options : [],
+        options: type === 'single_select' || type === 'formula' ? options : [],
         formula: type === 'formula' ? formula.trim() : undefined,
       });
       onClose();
@@ -187,6 +187,8 @@ export const EditColumnModal: React.FC<Props> = ({
                 <FormulaEditor
                   formula={formula}
                   onChangeFormula={setFormula}
+                  options={options}
+                  onChangeOptions={setOptions}
                   existingColumns={existingColumns}
                   lang={lang}
                 />

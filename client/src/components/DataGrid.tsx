@@ -965,8 +965,13 @@ export const DataGrid: React.FC<Props> = ({
                         if (col.type === 'formula') {
                           const result = evaluateFormula(col.formula, issue, columns);
                           const isError = result === 'Error: Formula';
-                          const isOne = result === 1 || result === '1' || result === true;
-                          const isZero = result === 0 || result === '0' || result === false;
+
+                          // Match against configured color options for this column
+                          const matchedOption = col.options?.find(
+                            (o) =>
+                              String(o.label).trim().toLowerCase() ===
+                              String(result).trim().toLowerCase()
+                          );
 
                           return (
                             <td
@@ -983,16 +988,24 @@ export const DataGrid: React.FC<Props> = ({
                                   <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-100 text-rose-700 rounded border border-rose-200">
                                     #ERROR!
                                   </span>
-                                ) : isOne ? (
+                                ) : matchedOption ? (
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs ${getColorClasses(
+                                      matchedOption.color
+                                    )}`}
+                                  >
+                                    {String(result)}
+                                  </span>
+                                ) : result === 1 || result === '1' || result === true ? (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
                                     1
                                   </span>
-                                ) : isZero ? (
+                                ) : result === 0 || result === '0' || result === false ? (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
                                     0
                                   </span>
                                 ) : result !== null && result !== undefined && String(result) !== '' ? (
-                                  <span className="text-xs font-medium text-gray-900 truncate">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200 shadow-2xs">
                                     {String(result)}
                                   </span>
                                 ) : (
