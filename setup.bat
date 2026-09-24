@@ -85,7 +85,7 @@ echo   Backend API: http://127.0.0.1:8000/docs
 echo ========================================================
 echo.
 echo Abriendo navegador en 3 segundos...
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul 2>&1
 start http://localhost:5173
 
 echo.
