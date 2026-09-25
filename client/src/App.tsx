@@ -8,6 +8,7 @@ import { DataGrid } from './components/DataGrid';
 import { ManageFieldsModal } from './components/ManageFieldsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TableTabs } from './components/TableTabs';
+import { CreateTableModal } from './components/CreateTableModal';
 import { Toolbar } from './components/Toolbar';
 import { ViewsSidebar } from './components/ViewsSidebar';
 import {
@@ -83,6 +84,7 @@ export function App() {
   const [filterConjunction, setFilterConjunction] = useState<FilterConjunction>('and');
 
   // Modals & Drawers
+  const [isCreateTableOpen, setIsCreateTableOpen] = useState(false);
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<CustomColumn | null>(null);
   const [editColumnOrigin, setEditColumnOrigin] = useState<'manage_fields' | 'grid' | null>(null);
@@ -383,6 +385,40 @@ export function App() {
       }
     } catch (err: any) {
       alert(`Error al crear tabla local: ${err.message}`);
+    }
+  };
+
+  const handleCreateJiraFilterTable = async (data: { id?: string; name: string; jql?: string }) => {
+    try {
+      const updatedFilters = await addConfiguredFilter({
+        id: data.id,
+        name: data.name,
+        jql: data.jql,
+        type: 'jira_filter',
+      });
+      setFilters(updatedFilters);
+      const newTable = data.id
+        ? updatedFilters.find((f) => f.id === data.id)
+        : updatedFilters.find((f) => f.name === data.name);
+      if (newTable) {
+        handleSelectFilter(newTable.id);
+        // Pull issues for this Jira filter in background
+        syncIssues(newTable.id)
+          .then(async (res) => {
+            const [updatedIssues, updatedConfig] = await Promise.all([
+              fetchIssues(),
+              fetchConfig(),
+            ]);
+            setAllIssues(updatedIssues);
+            setConfig(updatedConfig);
+            setBannerMessage(res.message);
+            setTimeout(() => setBannerMessage(null), 4000);
+          })
+          .catch(console.error);
+      }
+    } catch (err: any) {
+      alert(`Error al vincular filtro de Jira: ${err.message}`);
+      throw err;
     }
   };
 
@@ -719,8 +755,7 @@ export function App() {
         tables={filters}
         activeTableId={selectedFilterId}
         onSelectTable={handleSelectFilter}
-        onCreateLocalTable={handleCreateLocalTable}
-        onOpenJiraFilters={() => setIsSettingsOpen(true)}
+        onOpenCreateTable={() => setIsCreateTableOpen(true)}
         onDeleteTable={handleDeleteTable}
         lang={lang}
       />
@@ -873,6 +908,15 @@ export function App() {
         config={config}
         onRefreshConfig={loadAllData}
         existingColumns={columns}
+        lang={lang}
+      />
+
+      {/* Create Table Modal (Local Table or Jira Filter) */}
+      <CreateTableModal
+        isOpen={isCreateTableOpen}
+        onClose={() => setIsCreateTableOpen(false)}
+        onCreateLocalTable={handleCreateLocalTable}
+        onCreateJiraFilterTable={handleCreateJiraFilterTable}
         lang={lang}
       />
 

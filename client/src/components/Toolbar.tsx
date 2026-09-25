@@ -143,7 +143,7 @@ export const Toolbar: React.FC<Props> = ({
             type="button"
             onClick={onToggleViewsSidebar}
             title={lang === 'es' ? 'Mostrar / Ocultar panel de vistas' : 'Toggle views panel'}
-            className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${
+            className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer btn-tactile ${
               isViewsSidebarOpen
                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                 : 'bg-white hover:bg-gray-100 text-gray-700 border-gray-200'
@@ -158,7 +158,7 @@ export const Toolbar: React.FC<Props> = ({
           <button
             type="button"
             onClick={onAddRow}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors shadow-xs cursor-pointer"
+            className="btn-tactile flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{lang === 'es' ? 'Nueva Fila' : 'New Row'}</span>
@@ -171,7 +171,7 @@ export const Toolbar: React.FC<Props> = ({
             type="button"
             onClick={onSync}
             disabled={syncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors shadow-xs cursor-pointer"
+            className="btn-tactile flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors shadow-xs cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
             <span>{syncing ? t.syncing_btn : t.sync_btn}</span>
@@ -213,7 +213,7 @@ export const Toolbar: React.FC<Props> = ({
             type="button"
             onClick={() => setActiveMenu((prev) => (prev === 'filter' ? null : 'filter'))}
             title={lang === 'es' ? 'Filtrar por uno o varios campos' : 'Filter by one or multiple fields'}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+            className={`btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
               filterConditions.length > 0
                 ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-semibold shadow-2xs'
                 : 'border-gray-200 hover:bg-gray-50 text-gray-700'
@@ -248,7 +248,7 @@ export const Toolbar: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setActiveMenu((prev) => (prev === 'sort' ? null : 'sort'))}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            className={`btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
               sortField ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
             }`}
           >
@@ -262,7 +262,7 @@ export const Toolbar: React.FC<Props> = ({
           </button>
 
           {activeMenu === 'sort' && (
-            <div className="absolute right-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95">
+            <div className="absolute right-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 {t.sort_by}
               </div>
@@ -321,7 +321,7 @@ export const Toolbar: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setActiveMenu((prev) => (prev === 'group' ? null : 'group'))}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            className={`btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
               groupBy ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
             }`}
           >
@@ -331,7 +331,7 @@ export const Toolbar: React.FC<Props> = ({
           </button>
 
           {activeMenu === 'group' && (
-            <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95">
+            <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 {t.group_by_label}
               </div>
@@ -408,14 +408,14 @@ export const Toolbar: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setActiveMenu((prev) => (prev === 'columns' ? null : 'columns'))}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+            className="btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"
           >
             <Columns className="w-3.5 h-3.5" />
             <span>{t.columns_btn}</span>
           </button>
 
           {activeMenu === 'columns' && (
-            <div className="absolute right-0 mt-1 w-60 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 max-h-72 overflow-y-auto animate-in fade-in zoom-in-95">
+            <div className="absolute right-0 mt-1 w-60 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 max-h-72 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 {t.columns_visibility}
               </div>
@@ -442,7 +442,7 @@ export const Toolbar: React.FC<Props> = ({
           <button
             onClick={onOpenManageFields}
             title={lang === 'es' ? 'Gestionar, Ocultar y Reacomodar Campos' : 'Manage, Hide & Reorder Fields'}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 transition-colors shadow-2xs"
+            className="btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 transition-colors shadow-2xs cursor-pointer"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
             <span>{t.manage_fields_btn}</span>
@@ -455,7 +455,7 @@ export const Toolbar: React.FC<Props> = ({
         {/* Add Column Button */}
         <button
           onClick={onOpenAddColumn}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors"
+          className="btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5 text-blue-600" />
           <span>{t.add_column_btn}</span>
@@ -466,7 +466,7 @@ export const Toolbar: React.FC<Props> = ({
           <button
             onClick={onExportPdf}
             title={t.export_pdf}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 transition-colors border border-rose-200 shadow-2xs"
+            className="btn-tactile flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 transition-colors border border-rose-200 shadow-2xs cursor-pointer"
           >
             <FileDown className="w-3.5 h-3.5 text-rose-600" />
             <span>{t.export_pdf}</span>
@@ -477,7 +477,7 @@ export const Toolbar: React.FC<Props> = ({
         <button
           onClick={onOpenSettings}
           title={t.settings_tooltip}
-          className="p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors border border-gray-200"
+          className="btn-tactile p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors border border-gray-200 cursor-pointer"
         >
           <Settings className="w-4 h-4" />
         </button>

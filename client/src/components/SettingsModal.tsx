@@ -371,11 +371,13 @@ export const SettingsModal: React.FC<Props> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-4 overflow-y-auto transition-all duration-200"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden my-6 flex flex-col max-h-[85vh]"
+        className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200/90 overflow-hidden my-6 flex flex-col max-h-[88vh] animate-enter-modal"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import {
   Database,
   Filter,
@@ -12,8 +12,7 @@ interface Props {
   tables: JiraFilter[];
   activeTableId: string;
   onSelectTable: (tableId: string) => void;
-  onCreateLocalTable: (name: string) => Promise<void>;
-  onOpenJiraFilters: () => void;
+  onOpenCreateTable: () => void;
   onDeleteTable?: (tableId: string) => Promise<void>;
   lang: Language;
 }
@@ -22,48 +21,14 @@ export const TableTabs: React.FC<Props> = ({
   tables,
   activeTableId,
   onSelectTable,
-  onCreateLocalTable,
-  onOpenJiraFilters,
+  onOpenCreateTable,
   onDeleteTable,
   lang,
 }) => {
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const [isCreatingLocal, setIsCreatingLocal] = useState(false);
-  const [newTableName, setNewTableName] = useState('');
-  const menuRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Close add menu on outside click
-  useEffect(() => {
-    if (!showAddMenu) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowAddMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showAddMenu]);
-
-  useEffect(() => {
-    if (isCreatingLocal && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isCreatingLocal]);
-
-  const handleConfirmCreateLocal = async () => {
-    const name = newTableName.trim();
-    if (!name) return;
-    await onCreateLocalTable(name);
-    setNewTableName('');
-    setIsCreatingLocal(false);
-    setShowAddMenu(false);
-  };
-
   return (
-    <div className="flex items-center bg-[#f8f9fb] border-b border-gray-200 px-3 pt-1 select-none overflow-x-auto shrink-0 gap-1">
-      {/* Table Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto flex-1 py-0.5">
+    <div className="flex items-center bg-[#f4f5f8] border-b border-gray-200/90 px-3 pt-1.5 select-none overflow-x-auto shrink-0 gap-1.5 scrollbar-thin">
+      {/* Table Tabs List */}
+      <div className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5">
         {tables.map((table) => {
           const isActive = table.id === activeTableId;
           const isLocal = table.type === 'local' || table.id.startsWith('tbl-');
@@ -71,32 +36,50 @@ export const TableTabs: React.FC<Props> = ({
           return (
             <div
               key={table.id}
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={0}
               onClick={() => onSelectTable(table.id)}
-              className={`group relative flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs font-medium cursor-pointer transition-all border-t border-x shrink-0 ${
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  onSelectTable(table.id);
+                }
+              }}
+              className={`group relative flex items-center gap-2 px-3.5 py-1.5 rounded-t-lg text-xs font-medium cursor-pointer transition-all duration-200 transition-spring border-t border-x shrink-0 active:scale-[0.98] ${
                 isActive
-                  ? 'bg-white text-blue-900 border-gray-200 border-b-white font-semibold shadow-xs -mb-[1px] z-10'
-                  : 'bg-transparent hover:bg-gray-200/60 text-gray-600 border-transparent hover:border-gray-200'
+                  ? `bg-white border-gray-200 border-b-transparent font-semibold shadow-xs -mb-[1px] z-10 border-t-2 ${
+                      isLocal ? 'border-t-indigo-600 text-indigo-950' : 'border-t-blue-600 text-blue-950'
+                    }`
+                  : 'bg-gray-200/40 hover:bg-white/80 text-gray-600 border-transparent hover:border-gray-200/60'
               }`}
             >
-              {/* Table Icon */}
+              {/* Table Icon with subtle pulse or spring on active */}
               {isLocal ? (
-                <Database className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-600' : 'text-gray-400'}`} />
+                <div className={`p-0.5 rounded ${isActive ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 group-hover:text-indigo-500'} transition-colors`}>
+                  <Database className="w-3.5 h-3.5" />
+                </div>
               ) : (
-                <Filter className={`w-3.5 h-3.5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                <div className={`p-0.5 rounded ${isActive ? 'bg-blue-50 text-blue-600' : 'text-gray-400 group-hover:text-blue-500'} transition-colors`}>
+                  <Filter className="w-3.5 h-3.5" />
+                </div>
               )}
 
               {/* Table Name */}
-              <span className="truncate max-w-[160px]">{table.name}</span>
+              <span className="truncate max-w-[170px] tracking-tight">{table.name}</span>
 
-              {/* Table Type Badge */}
-              {isLocal && (
-                <span className="px-1.5 py-0.2 bg-indigo-50 text-indigo-700 text-[9px] font-bold rounded-sm border border-indigo-200/60">
-                  {lang === 'es' ? 'Local' : 'Local'}
-                </span>
-              )}
+              {/* Table Type Pill Badge */}
+              <span
+                className={`px-1.5 py-0.2 text-[9px] font-bold rounded-sm border ${
+                  isLocal
+                    ? 'bg-indigo-50/80 text-indigo-700 border-indigo-200/60'
+                    : 'bg-blue-50/80 text-blue-700 border-blue-200/60'
+                }`}
+              >
+                {isLocal ? 'Local' : 'Jira'}
+              </span>
 
-              {/* Delete / Remove Action */}
-              {onDeleteTable && (tables.length > 1) && (
+              {/* Delete / Close Tab Action Button */}
+              {onDeleteTable && tables.length > 1 && (
                 <button
                   type="button"
                   title={lang === 'es' ? 'Eliminar / Cerrar tabla' : 'Delete / Close table'}
@@ -112,7 +95,7 @@ export const TableTabs: React.FC<Props> = ({
                       onDeleteTable(table.id);
                     }
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-rose-600 text-gray-400 rounded transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-rose-600 text-gray-400 rounded transition-all duration-150 hover:bg-rose-50 active:scale-90"
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
@@ -121,96 +104,16 @@ export const TableTabs: React.FC<Props> = ({
           );
         })}
 
-        {/* Add Table / Project Button */}
-        <div ref={menuRef} className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowAddMenu(!showAddMenu)}
-            title={lang === 'es' ? 'Agregar tabla local o filtro de Jira' : 'Add local table or Jira filter'}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold text-gray-600 hover:text-blue-700 hover:bg-gray-200/80 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{lang === 'es' ? 'Tabla' : 'Table'}</span>
-          </button>
-
-          {/* Add Dropdown Menu */}
-          {showAddMenu && (
-            <div className="absolute left-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 z-50 animate-in fade-in zoom-in-95">
-              {!isCreatingLocal ? (
-                <>
-                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    {lang === 'es' ? 'Crear o vincular tabla' : 'Create or link table'}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingLocal(true)}
-                    className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-indigo-50 text-gray-700 hover:text-indigo-800 transition-colors"
-                  >
-                    <Database className="w-4 h-4 text-indigo-600 shrink-0" />
-                    <div>
-                      <div className="font-semibold">{lang === 'es' ? 'Nueva Tabla Local' : 'New Local Table'}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {lang === 'es' ? 'Crea filas y campos 100% personalizados' : 'Create 100% custom rows & fields'}
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddMenu(false);
-                      onOpenJiraFilters();
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-blue-50 text-gray-700 hover:text-blue-800 transition-colors"
-                  >
-                    <Filter className="w-4 h-4 text-blue-600 shrink-0" />
-                    <div>
-                      <div className="font-semibold">{lang === 'es' ? 'Vincular Filtro de Jira' : 'Link Jira Filter'}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {lang === 'es' ? 'Sincroniza tickets desde Jira Cloud' : 'Sync tickets from Jira Cloud'}
-                      </div>
-                    </div>
-                  </button>
-                </>
-              ) : (
-                <div className="p-3">
-                  <div className="text-xs font-semibold text-gray-800 mb-1.5">
-                    {lang === 'es' ? 'Nombre de la tabla local' : 'Local table name'}
-                  </div>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={newTableName}
-                    onChange={(e) => setNewTableName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleConfirmCreateLocal();
-                      if (e.key === 'Escape') setIsCreatingLocal(false);
-                    }}
-                    placeholder={lang === 'es' ? 'Ej. Clientes, Entregables...' : 'e.g. Clients, Deliverables...'}
-                    className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
-                  />
-                  <div className="flex items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatingLocal(false)}
-                      className="px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
-                    >
-                      {lang === 'es' ? 'Cancelar' : 'Cancel'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmCreateLocal}
-                      disabled={!newTableName.trim()}
-                      className="px-3 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded"
-                    >
-                      {lang === 'es' ? 'Crear' : 'Create'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Add Table Button - Triggers CreateTableModal Directly */}
+        <button
+          type="button"
+          onClick={onOpenCreateTable}
+          title={lang === 'es' ? 'Crear nueva tabla (local o filtro Jira)' : 'Create new table (local or Jira filter)'}
+          className="btn-tactile shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/80 hover:bg-blue-100 hover:text-blue-800 border border-blue-200/70 shadow-2xs cursor-pointer ml-1"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>{lang === 'es' ? 'Crear Nueva Tabla' : 'Create New Table'}</span>
+        </button>
       </div>
     </div>
   );

@@ -88,8 +88,8 @@ export const ArchivyDrawer: React.FC<Props> = ({ issue, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/30 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-gray-200 animate-in slide-in-from-right duration-200">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-md flex justify-end animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-gray-200 animate-in slide-in-from-right duration-250 transition-spring">
         {/* Header */}
         <div className="p-5 border-b border-gray-200 bg-gray-50/70 flex items-start justify-between">
           <div className="space-y-1">

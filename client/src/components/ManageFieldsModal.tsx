@@ -143,11 +143,13 @@ export const ManageFieldsModal: React.FC<Props> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-4 transition-all duration-200"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150"
+        className="bg-white rounded-2xl shadow-2xl border border-gray-200/90 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] animate-enter-modal"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
