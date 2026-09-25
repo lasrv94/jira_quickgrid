@@ -478,6 +478,9 @@ export const DataGrid: React.FC<Props> = ({
   // Airtable / Excel style cell selection and copy/paste state
   const [selectedCell, setSelectedCell] = useState<{ issueKey: string; colId: string } | null>(null);
   const [selectionEndCell, setSelectionEndCell] = useState<{ issueKey: string; colId: string } | null>(null);
+  const [isSelecting, setIsSelecting] = useState<boolean>(false);
+  const isSelectingRef = useRef<boolean>(false);
+  const isSelectingRowsRef = useRef<boolean>(false);
   const [copiedCell, setCopiedCell] = useState<{ issueKey: string; colId: string } | null>(null);
   const [copyToast, setCopyToast] = useState<{ text: string } | null>(null);
   const [pasteToast, setPasteToast] = useState<{ message: string; subtext?: string; isError?: boolean } | null>(null);
@@ -600,44 +603,68 @@ export const DataGrid: React.FC<Props> = ({
   );
 
   // Range and Cell Selection Helpers
-  const isCellSelected = useCallback(
-    (issueKey: string, colId: string): boolean => {
-      if (!selectedCell) return false;
-      if (
-        !selectionEndCell ||
-        (selectedCell.issueKey === selectionEndCell.issueKey && selectedCell.colId === selectionEndCell.colId)
-      ) {
-        return selectedCell.issueKey === issueKey && selectedCell.colId === colId;
+  const rangeBounds = useMemo(() => {
+    if (!selectedCell) return null;
+    const startRow = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
+    const endRow = selectionEndCell ? visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey) : startRow;
+    const startCol = allColumnIds.indexOf(selectedCell.colId);
+    const endCol = selectionEndCell ? allColumnIds.indexOf(selectionEndCell.colId) : startCol;
+
+    if (startRow === -1 || startCol === -1 || endRow === -1 || endCol === -1) {
+      return null;
+    }
+
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const rowCount = maxRow - minRow + 1;
+    const colCount = maxCol - minCol + 1;
+    const totalCells = rowCount * colCount;
+
+    return {
+      minRow,
+      maxRow,
+      minCol,
+      maxCol,
+      hasRange: totalCells > 1,
+      rowCount,
+      colCount,
+      totalCells,
+      bottomRightKey: visibleIssues[maxRow]?.key,
+      bottomRightColId: allColumnIds[maxCol],
+    };
+  }, [selectedCell, selectionEndCell, visibleIssues, allColumnIds]);
+
+  const rangeStats = useMemo(() => {
+    if (!rangeBounds || !rangeBounds.hasRange) return null;
+
+    let numericSum = 0;
+    let numericCount = 0;
+
+    for (let r = rangeBounds.minRow; r <= rangeBounds.maxRow; r++) {
+      const issue = visibleIssues[r];
+      if (!issue) continue;
+      for (let c = rangeBounds.minCol; c <= rangeBounds.maxCol; c++) {
+        const cid = allColumnIds[c];
+        const textVal = getCellValueAsText(issue, cid, columns).trim();
+        const num = Number(textVal);
+        if (textVal !== '' && !isNaN(num)) {
+          numericSum += num;
+          numericCount++;
+        }
       }
+    }
 
-      const startRow = visibleIssues.findIndex((i) => i.key === selectedCell.issueKey);
-      const endRow = visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey);
-      const startCol = allColumnIds.indexOf(selectedCell.colId);
-      const endCol = allColumnIds.indexOf(selectionEndCell.colId);
+    return {
+      ...rangeBounds,
+      numericSum,
+      numericCount,
+      numericAvg: numericCount > 0 ? numericSum / numericCount : null,
+    };
+  }, [rangeBounds, visibleIssues, allColumnIds, columns]);
 
-      if (startRow === -1 || endRow === -1 || startCol === -1 || endCol === -1) {
-        return selectedCell.issueKey === issueKey && selectedCell.colId === colId;
-      }
-
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-
-      const curRow = visibleIssues.findIndex((i) => i.key === issueKey);
-      const curCol = allColumnIds.indexOf(colId);
-
-      return curRow >= minRow && curRow <= maxRow && curCol >= minCol && curCol <= maxCol;
-    },
-    [selectedCell, selectionEndCell, visibleIssues, allColumnIds]
-  );
-
-  const isCellPrimary = useCallback(
-    (issueKey: string, colId: string): boolean => {
-      return selectedCell?.issueKey === issueKey && selectedCell?.colId === colId;
-    },
-    [selectedCell]
-  );
 
   const getCellClasses = useCallback(
     (issueKey: string, colId: string): string => {
@@ -646,30 +673,151 @@ export const DataGrid: React.FC<Props> = ({
         return 'ring-2 ring-emerald-500 ring-inset bg-emerald-100/70 transition-all duration-300';
       }
       if (copiedCell?.issueKey === issueKey && copiedCell?.colId === colId) {
-        return 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/40';
+        return 'ring-2 ring-emerald-500 ring-inset bg-emerald-50/50';
       }
-      if (isCellPrimary(issueKey, colId)) {
-        return 'ring-2 ring-blue-600 ring-inset bg-blue-50/40 z-1';
+
+      const isPrimary = selectedCell?.issueKey === issueKey && selectedCell?.colId === colId;
+
+      if (!rangeBounds) {
+        if (isPrimary) {
+          return 'ring-2 ring-blue-600 ring-inset bg-blue-50/50 z-10 relative';
+        }
+        return '';
       }
-      if (isCellSelected(issueKey, colId)) {
-        return 'ring-1 ring-blue-400 ring-inset bg-blue-50/25';
+
+      const curRow = visibleIssues.findIndex((i) => i.key === issueKey);
+      const curCol = allColumnIds.indexOf(colId);
+
+      if (
+        curRow >= rangeBounds.minRow &&
+        curRow <= rangeBounds.maxRow &&
+        curCol >= rangeBounds.minCol &&
+        curCol <= rangeBounds.maxCol
+      ) {
+        if (!rangeBounds.hasRange) {
+          return 'ring-2 ring-blue-600 ring-inset bg-blue-50/50 z-10 relative';
+        }
+
+        const isTop = curRow === rangeBounds.minRow;
+        const isBottom = curRow === rangeBounds.maxRow;
+        const isLeft = curCol === rangeBounds.minCol;
+        const isRight = curCol === rangeBounds.maxCol;
+
+        let edgeClasses = 'bg-blue-100/35 relative z-10 ';
+        if (isPrimary) {
+          edgeClasses += 'ring-2 ring-blue-600 ring-inset font-medium ';
+        }
+        if (isTop) edgeClasses += 'border-t-2 !border-t-blue-600 ';
+        if (isBottom) edgeClasses += 'border-b-2 !border-b-blue-600 ';
+        if (isLeft) edgeClasses += 'border-l-2 !border-l-blue-600 ';
+        if (isRight) edgeClasses += 'border-r-2 !border-r-blue-600 ';
+
+        return edgeClasses;
       }
+
       return '';
     },
-    [pastedCells, copiedCell, isCellPrimary, isCellSelected]
+    [pastedCells, copiedCell, selectedCell, rangeBounds, visibleIssues, allColumnIds]
   );
 
-  const handleCellClick = useCallback(
+  const handleCellMouseDown = useCallback(
     (issueKey: string, colId: string, e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, a, input, select, textarea, [data-interactive="true"]')) {
+        return;
+      }
+
       if (e.shiftKey && selectedCell) {
+        e.preventDefault();
         setSelectionEndCell({ issueKey, colId });
       } else {
+        e.preventDefault();
         setSelectedCell({ issueKey, colId });
         setSelectionEndCell(null);
+        isSelectingRef.current = true;
+        isSelectingRowsRef.current = false;
+        setIsSelecting(true);
       }
     },
     [selectedCell]
   );
+
+  const handleCellMouseEnter = useCallback(
+    (issueKey: string, colId: string) => {
+      if (!isSelectingRef.current || !selectedCell) return;
+      setSelectionEndCell({ issueKey, colId });
+    },
+    [selectedCell]
+  );
+
+  const handleRowIndexMouseDown = useCallback(
+    (issueKey: string, e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const firstCol = allColumnIds[0];
+      const lastCol = allColumnIds[allColumnIds.length - 1];
+
+      if (e.shiftKey && selectedCell) {
+        setSelectionEndCell({ issueKey, colId: lastCol });
+      } else {
+        setSelectedCell({ issueKey, colId: firstCol });
+        setSelectionEndCell({ issueKey, colId: lastCol });
+        isSelectingRowsRef.current = true;
+        isSelectingRef.current = false;
+        setIsSelecting(true);
+      }
+    },
+    [selectedCell, allColumnIds]
+  );
+
+  const handleRowIndexMouseEnter = useCallback(
+    (issueKey: string) => {
+      if (!isSelectingRowsRef.current || !selectedCell) return;
+      const lastCol = allColumnIds[allColumnIds.length - 1];
+      setSelectionEndCell({ issueKey, colId: lastCol });
+    },
+    [selectedCell, allColumnIds]
+  );
+
+  const handleCellClick = useCallback(
+    (issueKey: string, colId: string, e: React.MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, a, input, select, textarea, [data-interactive="true"]')) {
+        return;
+      }
+      if (e.shiftKey && selectedCell) {
+        setSelectionEndCell({ issueKey, colId });
+      }
+    },
+    [selectedCell]
+  );
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isSelectingRef.current || isSelectingRowsRef.current) {
+        isSelectingRef.current = false;
+        isSelectingRowsRef.current = false;
+        setIsSelecting(false);
+      }
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
+  const renderCornerHandle = (issueKey: string, colId: string) => {
+    if (rangeBounds?.bottomRightKey === issueKey && rangeBounds?.bottomRightColId === colId) {
+      return (
+        <div
+          className="absolute -bottom-1 -right-1 w-2 h-2 bg-blue-600 border border-white shadow-xs z-30 pointer-events-none"
+          title={lang === 'es' ? 'Rango seleccionado' : 'Selected range'}
+        />
+      );
+    }
+    return null;
+  };
 
   // Copy handler (handles single cell or multi-cell rectangular range)
   const handleCopyCell = useCallback(
@@ -1340,7 +1488,7 @@ export const DataGrid: React.FC<Props> = ({
     <div className="flex-1 overflow-x-auto overflow-y-auto bg-white relative min-h-[500px] pb-64">
       <table
         style={{ minWidth: `${totalTableWidth}px` }}
-        className="min-w-max text-left border-collapse text-xs mb-36"
+        className={`min-w-max text-left border-collapse text-xs mb-36 ${isSelecting ? 'select-none' : ''}`}
       >
         {/* Table Header */}
         <thead className="bg-[#f8f9fb] sticky top-0 z-20 border-b border-gray-200 text-gray-600 font-semibold uppercase text-[11px] tracking-wider select-none">
@@ -1602,12 +1750,19 @@ export const DataGrid: React.FC<Props> = ({
                       className="hover:bg-blue-50/30 transition-colors group border-b border-gray-100"
                     >
                       {/* Row Index */}
-                      <td className="px-3 py-2 text-center text-gray-400 font-mono text-[11px] border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-0 z-10">
+                      <td
+                        onMouseDown={(e) => handleRowIndexMouseDown(issue.key, e)}
+                        onMouseEnter={() => handleRowIndexMouseEnter(issue.key)}
+                        className="px-3 py-2 text-center text-gray-400 font-mono text-[11px] border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-0 z-10 cursor-pointer select-none hover:text-blue-600 transition-colors"
+                        title={lang === 'es' ? 'Clic o arrastrar para seleccionar fila completa' : 'Click or drag to select entire row'}
+                      >
                         {idx + 1}
                       </td>
 
                       {/* Key */}
                       <td
+                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'key', e)}
+                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'key')}
                         onClick={(e) => handleCellClick(issue.key, 'key', e)}
                         className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
                           issue.key,
@@ -1615,8 +1770,8 @@ export const DataGrid: React.FC<Props> = ({
                         )}`}
                         title={
                           lang === 'es'
-                            ? `${issue.key} (Clic para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.key} (Click to select, Ctrl+C to copy)`
+                            ? `${issue.key} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.key} (Click or drag to select, Ctrl+C to copy)`
                         }
                       >
                         <div className="flex items-center justify-between gap-1">
@@ -1656,10 +1811,13 @@ export const DataGrid: React.FC<Props> = ({
                             <Copy className="w-3 h-3" />
                           </button>
                         </div>
+                        {renderCornerHandle(issue.key, 'key')}
                       </td>
 
                       {/* Summary */}
                       <td
+                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'summary', e)}
+                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'summary')}
                         onClick={(e) => handleCellClick(issue.key, 'summary', e)}
                         className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${getCellClasses(
                           issue.key,
@@ -1667,8 +1825,8 @@ export const DataGrid: React.FC<Props> = ({
                         )}`}
                         title={
                           lang === 'es'
-                            ? `${issue.summary} (Clic para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.summary} (Click to select, Ctrl+C to copy)`
+                            ? `${issue.summary} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.summary} (Click or drag to select, Ctrl+C to copy)`
                         }
                       >
                         <div className="flex items-center justify-between gap-1">
@@ -1687,10 +1845,13 @@ export const DataGrid: React.FC<Props> = ({
                             <Copy className="w-3 h-3" />
                           </button>
                         </div>
+                        {renderCornerHandle(issue.key, 'summary')}
                       </td>
 
                       {/* Jira Status */}
                       <td
+                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'status', e)}
+                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'status')}
                         onClick={(e) => handleCellClick(issue.key, 'status', e)}
                         className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
                           issue.key,
@@ -1698,8 +1859,8 @@ export const DataGrid: React.FC<Props> = ({
                         )}`}
                         title={
                           lang === 'es'
-                            ? `${issue.jira_status} (Clic para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.jira_status} (Click to select, Ctrl+C to copy)`
+                            ? `${issue.jira_status} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.jira_status} (Click or drag to select, Ctrl+C to copy)`
                         }
                       >
                         <div className="flex items-center justify-between gap-1">
@@ -1722,10 +1883,13 @@ export const DataGrid: React.FC<Props> = ({
                             <Copy className="w-3 h-3" />
                           </button>
                         </div>
+                        {renderCornerHandle(issue.key, 'status')}
                       </td>
 
                       {/* Priority */}
                       <td
+                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'priority', e)}
+                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'priority')}
                         onClick={(e) => handleCellClick(issue.key, 'priority', e)}
                         className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
                           issue.key,
@@ -1733,8 +1897,8 @@ export const DataGrid: React.FC<Props> = ({
                         )}`}
                         title={
                           lang === 'es'
-                            ? `${issue.priority} (Clic para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.priority} (Click to select, Ctrl+C to copy)`
+                            ? `${issue.priority} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.priority} (Click or drag to select, Ctrl+C to copy)`
                         }
                       >
                         <div className="flex items-center justify-between gap-1">
@@ -1757,10 +1921,13 @@ export const DataGrid: React.FC<Props> = ({
                             <Copy className="w-3 h-3" />
                           </button>
                         </div>
+                        {renderCornerHandle(issue.key, 'priority')}
                       </td>
 
                       {/* Assignee */}
                       <td
+                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'assignee', e)}
+                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'assignee')}
                         onClick={(e) => handleCellClick(issue.key, 'assignee', e)}
                         className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
                           issue.key,
@@ -1768,8 +1935,8 @@ export const DataGrid: React.FC<Props> = ({
                         )}`}
                         title={
                           lang === 'es'
-                            ? `${issue.assignee_name || t.unassigned} (Clic para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.assignee_name || t.unassigned} (Click to select, Ctrl+C to copy)`
+                            ? `${issue.assignee_name || t.unassigned} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                            : `${issue.assignee_name || t.unassigned} (Click or drag to select, Ctrl+C to copy)`
                         }
                       >
                         <div className="flex items-center justify-between gap-1.5">
@@ -1801,6 +1968,7 @@ export const DataGrid: React.FC<Props> = ({
                             <Copy className="w-3 h-3" />
                           </button>
                         </div>
+                        {renderCornerHandle(issue.key, 'assignee')}
                       </td>
 
                       {/* Custom Columns Cells */}
@@ -1814,6 +1982,8 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
+                              onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                              onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
                               onClick={(e) => handleCellClick(issue.key, col.id, e)}
                               className={`px-3 py-1.5 border-r border-gray-100 cursor-pointer transition-all ${getCellClasses(
                                 issue.key,
@@ -1840,6 +2010,7 @@ export const DataGrid: React.FC<Props> = ({
                                   <Copy className="w-3 h-3" />
                                 </button>
                               </div>
+                              {renderCornerHandle(issue.key, col.id)}
                             </td>
                           );
                         }
@@ -1853,6 +2024,8 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
+                              onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                              onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
                               onClick={(e) => handleCellClick(issue.key, col.id, e)}
                               className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${getCellClasses(
                                 issue.key,
@@ -1860,8 +2033,8 @@ export const DataGrid: React.FC<Props> = ({
                               )}`}
                               title={
                                 lang === 'es'
-                                  ? `${currentOpt ? currentOpt.label : 'Sin opción'} (Clic para seleccionar, Ctrl+C copiar, Ctrl+V pegar, doble clic para elegir)`
-                                  : `${currentOpt ? currentOpt.label : 'No option'} (Click to select, Ctrl+C to copy, Ctrl+V to paste, double click to choose)`
+                                  ? `${currentOpt ? currentOpt.label : 'Sin opción'} (Clic o arrastrar para seleccionar, Ctrl+C copiar, Ctrl+V pegar, doble clic para elegir)`
+                                  : `${currentOpt ? currentOpt.label : 'No option'} (Click or drag to select, Ctrl+C to copy, Ctrl+V to paste, double click to choose)`
                               }
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
@@ -1935,6 +2108,7 @@ export const DataGrid: React.FC<Props> = ({
                                   onClose={() => setActiveDropdown(null)}
                                 />
                               )}
+                              {renderCornerHandle(issue.key, col.id)}
                             </td>
                           );
                         }
@@ -1950,12 +2124,14 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
+                              onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                              onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
                               onClick={(e) => handleCellClick(issue.key, col.id, e)}
                               className={`px-3 py-1.5 border-r border-gray-100 max-w-[280px] bg-slate-50/20 text-gray-800 cursor-pointer group/cell transition-all ${getCellClasses(
                                 issue.key,
                                 col.id
                               )}`}
-                              title={`Jira (${fieldKey}) - Clic para seleccionar, Ctrl+C para copiar`}
+                              title={`Jira (${fieldKey}) - Clic o arrastrar para seleccionar, Ctrl+C para copiar`}
                             >
                               <div className="flex items-center justify-between gap-1">
                                 <div className="truncate flex-1">
@@ -1975,6 +2151,7 @@ export const DataGrid: React.FC<Props> = ({
                                   <Copy className="w-3 h-3" />
                                 </button>
                               </div>
+                              {renderCornerHandle(issue.key, col.id)}
                             </td>
                           );
                         }
@@ -1994,6 +2171,8 @@ export const DataGrid: React.FC<Props> = ({
                           return (
                             <td
                               key={col.id}
+                              onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                              onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
                               onClick={(e) => handleCellClick(issue.key, col.id, e)}
                               className={`px-3 py-1.5 border-r border-gray-100 max-w-[220px] bg-slate-50/15 text-gray-800 cursor-pointer hover:bg-indigo-50/40 group/cell transition-all ${getCellClasses(
                                 issue.key,
@@ -2003,13 +2182,13 @@ export const DataGrid: React.FC<Props> = ({
                                 col.formula
                                   ? `${col.name} = ${col.formula}\nResultado: ${result ?? '(vacío)'}\n(${
                                       lang === 'es'
-                                        ? 'Clic para seleccionar, Ctrl+C para copiar, doble clic para editar fórmula'
-                                        : 'Click to select, Ctrl+C to copy, double click to edit formula'
+                                        ? 'Clic o arrastrar para seleccionar, Ctrl+C para copiar, doble clic para editar fórmula'
+                                        : 'Click or drag to select, Ctrl+C to copy, double click to edit formula'
                                     })`
                                   : `${col.name} (${
                                       lang === 'es'
-                                        ? 'Clic para seleccionar, Ctrl+C para copiar, doble clic para configurar'
-                                        : 'Click to select, Ctrl+C to copy, double click to configure'
+                                        ? 'Clic o arrastrar para seleccionar, Ctrl+C para copiar, doble clic para configurar'
+                                        : 'Click or drag to select, Ctrl+C to copy, double click to configure'
                                     })`
                               }
                               onDoubleClick={(e) => {
@@ -2061,6 +2240,7 @@ export const DataGrid: React.FC<Props> = ({
                                   <Copy className="w-3 h-3" />
                                 </button>
                               </div>
+                              {renderCornerHandle(issue.key, col.id)}
                             </td>
                           );
                         }
@@ -2072,6 +2252,8 @@ export const DataGrid: React.FC<Props> = ({
                         return (
                           <td
                             key={col.id}
+                            onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                            onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
                             onClick={(e) => handleCellClick(issue.key, col.id, e)}
                             className={`px-3 py-1.5 border-r border-gray-100 relative group/cell hover:bg-blue-50/40 cursor-pointer transition-all ${getCellClasses(
                               issue.key,
@@ -2079,8 +2261,8 @@ export const DataGrid: React.FC<Props> = ({
                             )}`}
                             title={
                               lang === 'es'
-                                ? 'Clic para seleccionar (Ctrl+C copiar, Ctrl+V pegar), doble clic o lápiz para editar'
-                                : 'Click to select (Ctrl+C to copy, Ctrl+V to paste), double click or pencil to edit'
+                                ? 'Clic o arrastrar para seleccionar (Ctrl+C copiar, Ctrl+V pegar), doble clic o lápiz para editar'
+                                : 'Click or drag to select (Ctrl+C to copy, Ctrl+V to paste), double click or pencil to edit'
                             }
                             onDoubleClick={(e) => {
                               e.stopPropagation();
@@ -2163,6 +2345,7 @@ export const DataGrid: React.FC<Props> = ({
                                 </div>
                               </div>
                             )}
+                            {renderCornerHandle(issue.key, col.id)}
                           </td>
                         );
                       })}
@@ -2177,9 +2360,83 @@ export const DataGrid: React.FC<Props> = ({
         </tbody>
       </table>
 
+      {/* Airtable / Excel-style Floating Selection Action Bar */}
+      {rangeStats && rangeStats.hasRange && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 bg-gray-900/95 text-white text-xs font-medium rounded-xl shadow-2xl border border-gray-700/80 backdrop-blur-md animate-in fade-in slide-in-from-bottom-3 duration-150 select-none">
+          <div className="flex items-center gap-2 pr-3 border-r border-gray-700/80">
+            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            <span className="font-semibold text-white">
+              {rangeStats.totalCells} {lang === 'es' ? 'celdas' : 'cells'}
+            </span>
+            <span className="text-[11px] text-gray-400">
+              ({rangeStats.rowCount} {lang === 'es' ? 'filas' : 'rows'} × {rangeStats.colCount} {lang === 'es' ? 'col' : 'col'})
+            </span>
+          </div>
+
+          {rangeStats.numericCount > 0 && (
+            <div className="hidden sm:flex items-center gap-3 pr-3 border-r border-gray-700/80 text-[11px] text-gray-300">
+              <span>
+                <strong className="text-gray-400">{lang === 'es' ? 'Suma:' : 'Sum:'}</strong>{' '}
+                <span className="text-white font-mono font-medium">
+                  {rangeStats.numericSum % 1 === 0 ? rangeStats.numericSum : rangeStats.numericSum.toFixed(2)}
+                </span>
+              </span>
+              {rangeStats.numericAvg !== null && (
+                <span>
+                  <strong className="text-gray-400">{lang === 'es' ? 'Prom:' : 'Avg:'}</strong>{' '}
+                  <span className="text-white font-mono font-medium">
+                    {rangeStats.numericAvg.toFixed(1)}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => handleCopyCell()}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors cursor-pointer shadow-xs active:scale-95"
+              title={lang === 'es' ? 'Copiar selección (Ctrl+C)' : 'Copy selection (Ctrl+C)'}
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>{lang === 'es' ? 'Copiar' : 'Copy'}</span>
+              <span className="text-[10px] text-blue-200 font-mono ml-0.5">Ctrl+C</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleClearSelectedCells()}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors cursor-pointer shadow-xs active:scale-95"
+              title={lang === 'es' ? 'Borrar contenido de celdas (Del)' : 'Clear cell contents (Del)'}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{lang === 'es' ? 'Limpiar' : 'Clear'}</span>
+              <span className="text-[10px] text-gray-400 font-mono ml-0.5">Del</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCell(null);
+                setSelectionEndCell(null);
+              }}
+              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 transition-colors cursor-pointer ml-1"
+              title={lang === 'es' ? 'Deseleccionar (Esc)' : 'Deselect (Esc)'}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Airtable-style Floating Copy Toast */}
       {copyToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-gray-900/95 text-white text-xs font-medium rounded-full shadow-2xl border border-gray-700 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
+        <div
+          className={`fixed ${
+            rangeStats?.hasRange ? 'bottom-20' : 'bottom-6'
+          } left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 bg-gray-900/95 text-white text-xs font-medium rounded-full shadow-2xl border border-gray-700 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none`}
+        >
           <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span>{lang === 'es' ? 'Copiado al portapapeles:' : 'Copied to clipboard:'}</span>
           <span className="font-semibold text-emerald-300 max-w-[200px] truncate">
@@ -2192,7 +2449,9 @@ export const DataGrid: React.FC<Props> = ({
       {/* Airtable-style Floating Paste Toast */}
       {pasteToast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 text-xs font-medium rounded-full shadow-2xl border backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none ${
+          className={`fixed ${
+            rangeStats?.hasRange ? 'bottom-20' : 'bottom-6'
+          } left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 text-xs font-medium rounded-full shadow-2xl border backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none ${
             pasteToast.isError
               ? 'bg-rose-950/95 text-rose-100 border-rose-800'
               : 'bg-gray-900/95 text-white border-gray-700'
