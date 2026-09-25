@@ -98,19 +98,39 @@ export const Toolbar: React.FC<Props> = ({
       {/* Left controls: Jira Filter & Sync */}
       <div className="flex items-center gap-2 flex-wrap">
         {/* Jira Filter Selector */}
-        <div className="relative">
-          <select
-            value={selectedFilterId || ''}
-            onChange={(e) => onSelectFilter(e.target.value)}
-            className="text-xs font-medium text-gray-800 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-xs transition-colors pr-7 appearance-none"
-          >
-            {filters.map((f) => (
-              <option key={f.id} value={f.id}>
-                📁 {f.name}
+        <div className="relative flex items-center gap-1">
+          <div className="relative">
+            <select
+              value={selectedFilterId || ''}
+              onChange={(e) => {
+                if (e.target.value === '__add_jira_filter__') {
+                  onOpenSettings();
+                  return;
+                }
+                onSelectFilter(e.target.value);
+              }}
+              className="text-xs font-medium text-gray-800 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-xs transition-colors pr-7 appearance-none"
+            >
+              {filters.map((f) => (
+                <option key={f.id} value={f.id}>
+                  📁 {f.name}
+                </option>
+              ))}
+              <option disabled className="text-gray-400">──────────</option>
+              <option value="__add_jira_filter__" className="text-blue-600 font-semibold">
+                ➕ {lang === 'es' ? 'Administrar / Agregar filtros...' : 'Manage / Add Jira filters...'}
               </option>
-            ))}
-          </select>
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            title={lang === 'es' ? 'Administrar y agregar filtros de Jira' : 'Manage and add Jira filters'}
+            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {/* Sync Button */}

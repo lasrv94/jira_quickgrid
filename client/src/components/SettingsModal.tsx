@@ -17,8 +17,19 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { createColumn, deleteColumn, fetchJiraFields, syncIssues, updateConfig, validateJiraFilter } from '../services/api';
-import type { AppConfig, CustomColumn, JiraFieldInfo } from '../types';
+import {
+  addConfiguredFilter,
+  createColumn,
+  deleteColumn,
+  fetchAvailableJiraFilters,
+  fetchFilters,
+  fetchJiraFields,
+  removeConfiguredFilter,
+  syncIssues,
+  updateConfig,
+  validateJiraFilter,
+} from '../services/api';
+import type { AppConfig, CustomColumn, JiraFieldInfo, JiraFilter } from '../types';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
 
@@ -55,6 +66,14 @@ export const SettingsModal: React.FC<Props> = ({
   // Jira Filter / JQL settings
   const [filterId, setFilterId] = useState(config?.selected_filter_id || '');
   const [filterJql, setFilterJql] = useState(config?.filter_jql || '');
+  const [configuredFilters, setConfiguredFilters] = useState<JiraFilter[]>(config?.configured_filters || []);
+  const [newFilterId, setNewFilterId] = useState('');
+  const [newFilterName, setNewFilterName] = useState('');
+  const [newFilterJql, setNewFilterJql] = useState('');
+  const [availableFilters, setAvailableFilters] = useState<JiraFilter[]>([]);
+  const [loadingAvailableFilters, setLoadingAvailableFilters] = useState(false);
+  const [addingFilter, setAddingFilter] = useState(false);
+  const [deletingFilterId, setDeletingFilterId] = useState<string | null>(null);
   const [validatingFilter, setValidatingFilter] = useState(false);
   const [filterValidation, setFilterValidation] = useState<{
     valid: boolean;
@@ -85,8 +104,112 @@ export const SettingsModal: React.FC<Props> = ({
       setArchivyDir(config.archivy_dir || '');
       setFilterId(config.selected_filter_id || '');
       setFilterJql(config.filter_jql || '');
+      setConfiguredFilters(config.configured_filters || []);
     }
   }, [config, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'filter') {
+      fetchFilters()
+        .then((res) => {
+          if (Array.isArray(res) && res.length > 0) {
+            setConfiguredFilters(res);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isOpen, activeTab]);
+
+  const loadAvailableFilters = async () => {
+    setLoadingAvailableFilters(true);
+    try {
+      const data = await fetchAvailableJiraFilters();
+      setAvailableFilters(data);
+    } catch (err: any) {
+      console.error('Error fetching available Jira filters:', err);
+    } finally {
+      setLoadingAvailableFilters(false);
+    }
+  };
+
+  const handleAddCustomFilter = async () => {
+    if (!newFilterId && !newFilterJql) {
+      alert(lang === 'es' ? 'Ingresa un ID de Filtro o una consulta JQL' : 'Enter a Filter ID or JQL query');
+      return;
+    }
+    setAddingFilter(true);
+    try {
+      const updated = await addConfiguredFilter({
+        id: newFilterId.trim() || undefined,
+        name: newFilterName.trim() || undefined,
+        jql: newFilterJql.trim() || undefined,
+      });
+      setConfiguredFilters(updated);
+      setNewFilterId('');
+      setNewFilterName('');
+      setNewFilterJql('');
+      setFilterValidation(null);
+      await onRefreshConfig();
+    } catch (err: any) {
+      alert(err.message || 'Error al agregar filtro');
+    } finally {
+      setAddingFilter(false);
+    }
+  };
+
+  const handleAddAvailableFilter = async (avail: JiraFilter) => {
+    setAddingFilter(true);
+    try {
+      const updated = await addConfiguredFilter({
+        id: avail.id,
+        name: avail.name,
+        jql: avail.jql,
+      });
+      setConfiguredFilters(updated);
+      await onRefreshConfig();
+    } catch (err: any) {
+      alert(err.message || 'Error al agregar filtro');
+    } finally {
+      setAddingFilter(false);
+    }
+  };
+
+  const handleDeleteFilter = async (id: string) => {
+    if (configuredFilters.length <= 1) {
+      alert(lang === 'es' ? 'Debes mantener al menos un filtro configurado.' : 'You must keep at least one configured filter.');
+      return;
+    }
+    if (!window.confirm(lang === 'es' ? '¿Eliminar este filtro de tu barra?' : 'Remove this filter from your toolbar?')) return;
+    setDeletingFilterId(id);
+    try {
+      const updated = await removeConfiguredFilter(id);
+      setConfiguredFilters(updated);
+      if (filterId === id && updated.length > 0) {
+        setFilterId(updated[0].id);
+        setFilterJql(updated[0].jql);
+      }
+      await onRefreshConfig();
+    } catch (err: any) {
+      alert(err.message || 'Error al eliminar filtro');
+    } finally {
+      setDeletingFilterId(null);
+    }
+  };
+
+  const handleSelectActiveFilter = async (f: JiraFilter) => {
+    setFilterId(f.id);
+    setFilterJql(f.jql);
+    try {
+      await updateConfig({
+        selected_filter_id: f.id,
+        selected_filter_name: f.name,
+        filter_jql: f.jql,
+      });
+      await onRefreshConfig();
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
 
   // Handle ESC key to close modal
   useEffect(() => {
@@ -123,29 +246,6 @@ export const SettingsModal: React.FC<Props> = ({
     }
   };
 
-  const handleValidateFilter = async () => {
-    setValidatingFilter(true);
-    setFilterValidation(null);
-    try {
-      const res = await validateJiraFilter(filterId || undefined, filterJql || undefined);
-      setFilterValidation({
-        valid: res?.valid ?? true,
-        name: res?.name,
-        message: res?.message,
-        matched_issues: res?.matched_issues,
-      });
-      if (res?.jql && !filterJql) {
-        setFilterJql(res.jql);
-      }
-    } catch (err: any) {
-      setFilterValidation({
-        valid: false,
-        error: err?.message || 'Error validando filtro',
-      });
-    } finally {
-      setValidatingFilter(false);
-    }
-  };
 
   const handleAddJiraFieldAsColumn = async (field: JiraFieldInfo) => {
     if (!field || !field.id) return;
@@ -560,133 +660,269 @@ export const SettingsModal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* TAB 2: JIRA FILTER / JQL */}
+          {/* TAB 2: JIRA FILTERS MANAGER */}
           {activeTab === 'filter' && (
-            <div className="space-y-5">
-              <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
-                <p className="font-semibold mb-1">🎯 {t.tab_filter}</p>
-                {t.filter_desc}
+            <div className="space-y-6">
+              <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
+                <p className="font-semibold mb-1">🎯 {t.configured_filters_title}</p>
+                {t.configured_filters_desc}
               </div>
 
+              {/* SECTION 1: Current Configured Filters List */}
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  {t.filter_id_label}
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-2">
+                  {t.configured_filters_title} ({configuredFilters.length})
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder={t.filter_id_placeholder}
-                    value={filterId}
-                    onChange={(e) => setFilterId(e.target.value)}
-                    className="flex-1 px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white font-mono focus:ring-1 focus:ring-blue-500 text-gray-800"
+                {configuredFilters.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    {t.no_configured_filters}
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {configuredFilters.map((f) => {
+                      const isActive = filterId === f.id || config?.selected_filter_id === f.id;
+                      return (
+                        <div
+                          key={f.id}
+                          className={`p-3 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                            isActive
+                              ? 'bg-blue-50/70 border-blue-300 shadow-2xs'
+                              : 'bg-white hover:bg-gray-50 border-gray-200'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-gray-800 text-xs truncate">
+                                📁 {f.name}
+                              </span>
+                              {isActive && (
+                                <span className="px-1.5 py-0.2 bg-blue-600 text-white rounded text-[10px] font-bold">
+                                  {t.active_filter_badge}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-gray-400 font-mono truncate mt-0.5">
+                              ID: {f.id} • JQL: {f.jql || 'project is not EMPTY'}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            {!isActive && (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectActiveFilter(f)}
+                                className="px-2.5 py-1 text-[11px] font-semibold bg-white hover:bg-blue-50 text-blue-600 border border-blue-200 rounded transition-colors"
+                              >
+                                {t.set_as_active}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={deletingFilterId === f.id || configuredFilters.length <= 1}
+                              onClick={() => handleDeleteFilter(f.id)}
+                              title={t.remove_filter}
+                              className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded border border-gray-200 transition-colors disabled:opacity-30"
+                            >
+                              {deletingFilterId === f.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: Add New Filter Form */}
+              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5 text-blue-600" />
+                    {t.add_new_jira_filter}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                      {t.filter_name_label}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={t.filter_name_placeholder}
+                      value={newFilterName}
+                      onChange={(e) => setNewFilterName(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs rounded border border-gray-300 bg-white focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                      {t.filter_id_label}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="10001 (opcional si defines JQL)"
+                      value={newFilterId}
+                      onChange={(e) => setNewFilterId(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs rounded border border-gray-300 bg-white font-mono focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                    {t.jql_label}
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="project = KAN AND status != Done ORDER BY created DESC"
+                    value={newFilterJql}
+                    onChange={(e) => setNewFilterJql(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs rounded border border-gray-300 bg-white font-mono focus:ring-1 focus:ring-blue-500 resize-none"
                   />
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-[10px] text-gray-400 uppercase font-semibold">Presets:</span>
                   <button
                     type="button"
-                    disabled={validatingFilter}
-                    onClick={handleValidateFilter}
-                    className="px-3 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      setNewFilterName('Todos los tickets');
+                      setNewFilterJql('project is not EMPTY ORDER BY created DESC');
+                    }}
+                    className="px-2 py-0.5 text-[10px] bg-white hover:bg-gray-100 text-gray-700 rounded border border-gray-200"
                   >
-                    {validatingFilter ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                    ) : (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    )}
+                    📁 Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewFilterName('Tickets abiertos');
+                      setNewFilterJql('resolution is EMPTY ORDER BY updated DESC');
+                    }}
+                    className="px-2 py-0.5 text-[10px] bg-white hover:bg-gray-100 text-gray-700 rounded border border-gray-200"
+                  >
+                    ⏳ Abiertos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewFilterName('Mis tickets');
+                      setNewFilterJql('assignee = currentUser() ORDER BY updated DESC');
+                    }}
+                    className="px-2 py-0.5 text-[10px] bg-white hover:bg-gray-100 text-gray-700 rounded border border-gray-200"
+                  >
+                    👤 Asignados a mí
+                  </button>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-gray-200/80">
+                  <button
+                    type="button"
+                    disabled={validatingFilter || (!newFilterId && !newFilterJql)}
+                    onClick={async () => {
+                      setValidatingFilter(true);
+                      setFilterValidation(null);
+                      try {
+                        const res = await validateJiraFilter(newFilterId || undefined, newFilterJql || undefined);
+                        setFilterValidation({
+                          valid: res?.valid ?? true,
+                          name: res?.name,
+                          message: res?.message,
+                          matched_issues: res?.matched_issues,
+                        });
+                        if (res?.name && !newFilterName) setNewFilterName(res.name);
+                        if (res?.jql && !newFilterJql) setNewFilterJql(res.jql);
+                      } catch (err: any) {
+                        setFilterValidation({ valid: false, error: err?.message || 'Error validando filtro' });
+                      } finally {
+                        setValidatingFilter(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    {validatingFilter ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                     <span>{validatingFilter ? t.validating : t.validate_filter_btn}</span>
                   </button>
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <p className="text-[11px] text-gray-400">{t.filter_id_hint}</p>
-                  {(filterId || filterJql) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFilterId('');
-                        setFilterJql('');
-                        setFilterValidation(null);
-                      }}
-                      className="text-[11px] text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1 font-medium"
-                    >
-                      <X className="w-3 h-3" />
-                      <span>{t.clear_filter_btn}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  {t.jql_label}
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Ej. project = KAN AND status != Done ORDER BY created DESC"
-                  value={filterJql}
-                  onChange={(e) => setFilterJql(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white font-mono focus:ring-1 focus:ring-blue-500 text-gray-800 resize-none"
-                />
-              </div>
-
-              {/* Quick JQL Presets */}
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                  {t.quick_jql}
-                </label>
-                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setFilterJql('project is not EMPTY ORDER BY created DESC')}
-                    className="px-2.5 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-200"
+                    disabled={addingFilter || (!newFilterId && !newFilterJql)}
+                    onClick={handleAddCustomFilter}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition-colors disabled:opacity-50"
                   >
-                    {t.quick_all}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterJql('resolution is EMPTY ORDER BY updated DESC')}
-                    className="px-2.5 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-200"
-                  >
-                    {t.quick_open}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterJql('assignee = currentUser() ORDER BY updated DESC')}
-                    className="px-2.5 py-1 text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-200"
-                  >
-                    {t.quick_my}
+                    {addingFilter ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    <span>{t.add_filter_btn}</span>
                   </button>
                 </div>
-              </div>
 
-              {/* Validation Result Display */}
-              {filterValidation && (
-                <div
-                  className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
-                    filterValidation.valid
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      : 'bg-rose-50 border-rose-200 text-rose-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold mb-1">
-                    {filterValidation.valid ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>{t.filter_valid}: {filterValidation.name || 'OK'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <AlertCircle className="w-4 h-4 text-rose-600" />
-                        <span>{t.filter_error}</span>
-                      </>
-                    )}
+                {filterValidation && (
+                  <div className={`p-2.5 rounded-lg border text-xs ${filterValidation.valid ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                    <div className="font-semibold">{filterValidation.valid ? `✓ ${filterValidation.name || 'Filtro válido'}` : `✗ ${filterValidation.error}`}</div>
                   </div>
-                  {filterValidation.valid ? (
-                    <p className="text-[11px] text-emerald-700">
-                      {filterValidation.message || 'Filtro verificado con éxito.'}
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-rose-700 font-mono">{filterValidation.error}</p>
-                  )}
+                )}
+              </div>
+
+              {/* SECTION 3: Explore / Import from Jira instance */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-gray-800 block">
+                      🔍 {t.browse_jira_filters}
+                    </span>
+                    <span className="text-[11px] text-gray-500">
+                      Explora filtros guardados en tu cuenta de Jira para agregarlos con 1 clic.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={loadingAvailableFilters}
+                    onClick={loadAvailableFilters}
+                    className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-xs font-medium rounded-lg flex items-center gap-1.5 shadow-2xs transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingAvailableFilters ? 'animate-spin text-blue-600' : ''}`} />
+                    <span>{t.load_available_filters}</span>
+                  </button>
                 </div>
-              )}
+
+                {availableFilters.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 border border-gray-200 rounded-lg bg-white p-2 divide-y divide-gray-100">
+                    {availableFilters.map((avail) => {
+                      const alreadyAdded = configuredFilters.some((cf) => cf.id === avail.id);
+                      return (
+                        <div key={avail.id} className="pt-1.5 first:pt-0 flex items-center justify-between py-1 text-xs">
+                          <div className="truncate pr-2">
+                            <span className="font-medium text-gray-800 block truncate">{avail.name}</span>
+                            <span className="text-[10px] text-gray-400 font-mono block truncate">{avail.id} • {avail.jql}</span>
+                          </div>
+                          {alreadyAdded ? (
+                            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1 shrink-0">
+                              <Check className="w-3 h-3" />
+                              <span>En tu barra</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={addingFilter}
+                              onClick={() => handleAddAvailableFilter(avail)}
+                              className="px-2.5 py-1 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors flex items-center gap-1 shrink-0 disabled:opacity-50"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>{t.add_filter_btn}</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

@@ -191,3 +191,84 @@ def test_views_crud():
     assert del_res.status_code == 200
 
 
+def test_configured_filters_endpoints():
+    # 1. Initial list has ONLY the user's configured filter
+    res = client.get("/api/filters")
+    assert res.status_code == 200
+    filters = res.json()
+    assert len(filters) == 1
+    assert filters[0]["id"] == "fav-1"
+
+    # 2. Add a new configured filter
+    add_res = client.post("/api/jira/configured-filters", json={
+        "id": "custom-bug-filter",
+        "name": "Bugs Críticos",
+        "jql": "issuetype = Bug AND priority = Highest"
+    })
+    assert add_res.status_code == 200
+    updated_filters = add_res.json()
+    assert len(updated_filters) == 2
+    assert any(f["id"] == "custom-bug-filter" for f in updated_filters)
+
+    # 3. GET /api/filters now returns both
+    res2 = client.get("/api/filters")
+    assert res2.status_code == 200
+    filters2 = res2.json()
+    assert len(filters2) == 2
+
+    # 4. Remove the added filter
+    del_res = client.delete("/api/jira/configured-filters/custom-bug-filter")
+    assert del_res.status_code == 200
+    after_del = del_res.json()
+    assert len(after_del) == 1
+    assert not any(f["id"] == "custom-bug-filter" for f in after_del)
+
+
+@pytest.mark.asyncio
+async def test_jira_pagination_multiple_pages(monkeypatch):
+    from services.jira_service import JiraService
+    import httpx
+
+    requests_made = []
+
+    def mock_handler(request: httpx.Request):
+        requests_made.append(request)
+        token = request.url.params.get("nextPageToken")
+        if not token:
+            # Page 1: returns 100 issues and a nextPageToken
+            return httpx.Response(200, json={
+                "issues": [{"key": f"CORE-{i}", "fields": {"summary": f"Issue {i}"}} for i in range(1, 101)],
+                "nextPageToken": "token-page-2",
+                "isLast": False
+            })
+        elif token == "token-page-2":
+            # Page 2: returns 50 issues and no nextPageToken
+            return httpx.Response(200, json={
+                "issues": [{"key": f"CORE-{i}", "fields": {"summary": f"Issue {i}"}} for i in range(101, 151)],
+                "nextPageToken": None,
+                "isLast": True
+            })
+        return httpx.Response(200, json={"issues": [], "isLast": True})
+
+    original_client = httpx.AsyncClient
+
+    def client_factory(**kwargs):
+        return original_client(**kwargs, transport=httpx.MockTransport(mock_handler))
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+
+    issues = await JiraService._fetch_jira_issues(
+        base_url="https://mock.atlassian.net",
+        auth=("user", "pass"),
+        headers={},
+        jql="project = CORE"
+    )
+
+    # All 150 issues from both pages were fetched!
+    assert len(issues) == 150
+    assert issues[0]["key"] == "CORE-1"
+    assert issues[149]["key"] == "CORE-150"
+    assert len(requests_made) == 2
+
+
+

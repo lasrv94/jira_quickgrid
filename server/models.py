@@ -79,6 +79,7 @@ class SavedConfig(Base):
     selected_filter_id = Column(String(128), nullable=True)
     selected_filter_name = Column(String(256), nullable=True)
     filter_jql = Column(Text, nullable=True)
+    configured_filters = Column(JSON, nullable=True, default=list)
     last_sync = Column(DateTime(timezone=True), nullable=True)
     
     # Auth configuration
@@ -195,6 +196,7 @@ class ConfigOut(BaseModel):
     selected_filter_id: Optional[str] = None
     selected_filter_name: Optional[str] = None
     filter_jql: Optional[str] = None
+    configured_filters: Optional[List[Dict[str, Any]]] = None
     last_sync: Optional[datetime] = None
     jira_auth_type: str
     jira_domain: Optional[str] = None
@@ -210,6 +212,7 @@ class ConfigUpdateRequest(BaseModel):
     selected_filter_id: Optional[str] = None
     selected_filter_name: Optional[str] = None
     filter_jql: Optional[str] = None
+    configured_filters: Optional[List[Dict[str, Any]]] = None
     jira_auth_type: Optional[Literal["mock", "pat", "oauth"]] = None
     jira_domain: Optional[str] = None
     jira_email: Optional[str] = None

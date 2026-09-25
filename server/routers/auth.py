@@ -27,6 +27,7 @@ def get_auth_status(db: Session = Depends(get_db)):
         selected_filter_id=config.selected_filter_id,
         selected_filter_name=config.selected_filter_name,
         filter_jql=config.filter_jql,
+        configured_filters=config.configured_filters or [],
         last_sync=config.last_sync,
         jira_auth_type=config.jira_auth_type or "mock",
         jira_domain=config.jira_domain,
@@ -62,6 +63,8 @@ def update_auth_config(data: ConfigUpdateRequest, db: Session = Depends(get_db))
         config.selected_filter_name = data.selected_filter_name
     if data.filter_jql is not None:
         config.filter_jql = data.filter_jql
+    if data.configured_filters is not None:
+        config.configured_filters = data.configured_filters
     if data.archivy_dir is not None:
         config.archivy_dir = data.archivy_dir
 

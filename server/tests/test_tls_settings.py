@@ -58,6 +58,7 @@ async def test_tls_policy_applies_to_all_jira_requests(monkeypatch, mode, settin
                            selected_filter_id="123"))
         db.commit()
         await JiraService.get_filters(db)
+        await JiraService.get_available_jira_filters(db)
         await JiraService.get_jira_fields(db)
         await JiraService.validate_filter_or_jql(db, jql="project = TEST")
         await JiraService.sync_issues_from_jira(db)

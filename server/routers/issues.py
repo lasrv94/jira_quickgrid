@@ -12,13 +12,34 @@ from models import (
     JiraIssue,
     SetCustomValueRequest,
 )
+from pydantic import BaseModel
 from services.jira_service import JiraService
 
 router = APIRouter(prefix="/api", tags=["issues"])
 
+class AddConfiguredFilterRequest(BaseModel):
+    id: Optional[str] = None
+    name: Optional[str] = None
+    jql: Optional[str] = None
+
 @router.get("/filters", response_model=List[JiraFilterOut])
 async def list_jira_filters(db: Session = Depends(get_db)):
     filters = await JiraService.get_filters(db)
+    return [JiraFilterOut(**f) for f in filters]
+
+@router.get("/jira/available-filters", response_model=List[JiraFilterOut])
+async def list_available_jira_filters(db: Session = Depends(get_db)):
+    filters = await JiraService.get_available_jira_filters(db)
+    return [JiraFilterOut(**f) for f in filters]
+
+@router.post("/jira/configured-filters", response_model=List[JiraFilterOut])
+async def add_configured_jira_filter(data: AddConfiguredFilterRequest, db: Session = Depends(get_db)):
+    filters = await JiraService.add_configured_filter(db, filter_id=data.id, name=data.name, jql=data.jql)
+    return [JiraFilterOut(**f) for f in filters]
+
+@router.delete("/jira/configured-filters/{filter_id}", response_model=List[JiraFilterOut])
+async def remove_configured_jira_filter(filter_id: str, db: Session = Depends(get_db)):
+    filters = await JiraService.remove_configured_filter(db, filter_id=filter_id)
     return [JiraFilterOut(**f) for f in filters]
 
 @router.post("/sync")

@@ -1,5 +1,6 @@
-import logging
 import os
+os.environ.setdefault("DISABLE_SQLALCHEMY_CEXT", "1")
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,6 +31,10 @@ try:
         config_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(saved_configs)")}
         if config_cols and "jira_verify_tls" not in config_cols:
             conn.exec_driver_sql("ALTER TABLE saved_configs ADD COLUMN jira_verify_tls BOOLEAN NOT NULL DEFAULT 1")
+            conn.commit()
+
+        if config_cols and "configured_filters" not in config_cols:
+            conn.exec_driver_sql("ALTER TABLE saved_configs ADD COLUMN configured_filters JSON")
             conn.commit()
 
         view_rows = conn.exec_driver_sql("PRAGMA table_info(saved_views)").fetchall()

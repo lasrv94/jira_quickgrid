@@ -174,4 +174,34 @@ export async function deleteView(viewId: string): Promise<void> {
   }
 }
 
+export async function fetchAvailableJiraFilters(): Promise<JiraFilter[]> {
+  const res = await fetch(`${API_BASE}/jira/available-filters`);
+  if (!res.ok) throw new Error('Error al consultar filtros disponibles de Jira');
+  return res.json();
+}
+
+export async function addConfiguredFilter(data: { id?: string; name?: string; jql?: string }): Promise<JiraFilter[]> {
+  const res = await fetch(`${API_BASE}/jira/configured-filters`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Error al agregar filtro configurado');
+  }
+  return res.json();
+}
+
+export async function removeConfiguredFilter(filterId: string): Promise<JiraFilter[]> {
+  const res = await fetch(`${API_BASE}/jira/configured-filters/${encodeURIComponent(filterId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Error al eliminar filtro configurado');
+  }
+  return res.json();
+}
+
 

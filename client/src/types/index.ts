@@ -65,6 +65,7 @@ export interface AppConfig {
   selected_filter_id?: string;
   selected_filter_name?: string;
   filter_jql?: string;
+  configured_filters?: JiraFilter[];
   last_sync?: string;
   jira_auth_type: 'mock' | 'pat' | 'oauth';
   jira_domain?: string;
