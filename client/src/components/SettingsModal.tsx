@@ -175,18 +175,19 @@ export const SettingsModal: React.FC<Props> = ({
   };
 
   const handleDeleteFilter = async (id: string) => {
-    if (configuredFilters.length <= 1) {
-      alert(lang === 'es' ? 'Debes mantener al menos un filtro configurado.' : 'You must keep at least one configured filter.');
-      return;
-    }
-    if (!window.confirm(lang === 'es' ? '¿Eliminar este filtro de tu barra?' : 'Remove this filter from your toolbar?')) return;
+    if (!window.confirm(lang === 'es' ? '¿Eliminar este filtro/proyecto de tu lista?' : 'Remove this filter/project from your list?')) return;
     setDeletingFilterId(id);
     try {
       const updated = await removeConfiguredFilter(id);
       setConfiguredFilters(updated);
-      if (filterId === id && updated.length > 0) {
-        setFilterId(updated[0].id);
-        setFilterJql(updated[0].jql);
+      if (filterId === id) {
+        if (updated.length > 0) {
+          setFilterId(updated[0].id);
+          setFilterJql(updated[0].jql);
+        } else {
+          setFilterId('');
+          setFilterJql('');
+        }
       }
       await onRefreshConfig();
     } catch (err: any) {
@@ -718,7 +719,7 @@ export const SettingsModal: React.FC<Props> = ({
                             )}
                             <button
                               type="button"
-                              disabled={deletingFilterId === f.id || configuredFilters.length <= 1}
+                              disabled={deletingFilterId === f.id}
                               onClick={() => handleDeleteFilter(f.id)}
                               title={t.remove_filter}
                               className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded border border-gray-200 transition-colors disabled:opacity-30"

@@ -156,13 +156,22 @@ export function App() {
     }
   };
 
-  const handleSelectFilter = async (filterId: string, saveToView: boolean = true) => {
+  const handleSelectFilter = async (filterId: string, _saveToView: boolean = true) => {
+    flushPendingSave();
     setSelectedFilterId(filterId);
-    if (saveToView) {
-      autoSaveActiveView({ filter_id: filterId }, 0);
-    }
     setSyncing(true);
     try {
+      // 1. Fetch views scoped to this project / filter
+      const projectViews = await fetchViews(filterId).catch(() => []);
+      if (projectViews && projectViews.length > 0) {
+        setViews(projectViews);
+        const initialView = projectViews.find((v) => v.is_default) || projectViews[0];
+        if (initialView) {
+          applyView(initialView);
+        }
+      }
+
+      // 2. Synchronize issues for this project
       await syncIssues(filterId);
       const updatedIssues = await fetchIssues();
       const updatedConfig = await fetchConfig();
@@ -229,17 +238,23 @@ export function App() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [fetchedConfig, fetchedFilters, fetchedColumns, fetchedIssues, fetchedViews] = await Promise.all([
+      const [fetchedConfig, fetchedFilters, fetchedColumns, fetchedIssues] = await Promise.all([
         fetchConfig(),
         fetchFilters(),
         fetchColumns(),
         fetchIssues(),
-        fetchViews().catch(() => []),
       ]);
       setConfig(fetchedConfig);
       setFilters(fetchedFilters);
       setColumns(fetchedColumns);
       setIssues(fetchedIssues);
+
+      const activeFilter = fetchedConfig.selected_filter_id || (fetchedFilters[0]?.id) || '';
+      if (activeFilter) {
+        setSelectedFilterId(activeFilter);
+      }
+
+      const fetchedViews = await fetchViews(activeFilter || undefined).catch(() => []);
       if (fetchedViews && fetchedViews.length > 0) {
         setViews(fetchedViews);
         const initialView =
@@ -249,9 +264,6 @@ export function App() {
         if (initialView) {
           applyView(initialView, fetchedColumns);
         }
-      }
-      if (fetchedConfig.selected_filter_id) {
-        setSelectedFilterId(fetchedConfig.selected_filter_id);
       }
     } catch (err) {
       console.error(err);
@@ -523,7 +535,7 @@ export function App() {
       const remaining = views.filter((v) => v.id !== viewId);
       setViews(remaining);
       if (activeViewId === viewId) {
-        const fallback = remaining[0];
+        const fallback = remaining.find((v) => v.is_default) || remaining[0];
         if (fallback) handleSelectView(fallback);
       }
     } catch (err: any) {

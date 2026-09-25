@@ -190,6 +190,28 @@ def test_views_crud():
     del_res = client.delete(f"/api/views/{view_id}")
     assert del_res.status_code == 200
 
+    # 5. Project-scoped views with filter_id
+    proj_res = client.get("/api/views?filter_id=proj-10001")
+    assert proj_res.status_code == 200
+    proj_views = proj_res.json()
+    assert len(proj_views) == 3
+    assert all(v["filter_id"] == "proj-10001" for v in proj_views)
+    assert any(v["name"] == "Todas las incidencias" and v["is_default"] for v in proj_views)
+
+    # Create view for project
+    proj_create_res = client.post("/api/views", json={
+        "name": "Vista Proyecto 10001",
+        "filter_id": "proj-10001",
+        "group_by": "priority"
+    })
+    assert proj_create_res.status_code == 200
+    created_proj_view = proj_create_res.json()
+    assert created_proj_view["filter_id"] == "proj-10001"
+
+    # Query project again and verify it contains 4 views
+    proj_res2 = client.get("/api/views?filter_id=proj-10001")
+    assert len(proj_res2.json()) == 4
+
 
 def test_configured_filters_endpoints():
     # 1. Initial list has ONLY the user's configured filter

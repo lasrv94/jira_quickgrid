@@ -194,10 +194,21 @@ class JiraService:
         config = JiraService.get_or_create_config(db)
         saved = config.configured_filters
         if saved and isinstance(saved, list) and len(saved) > 0:
+            # If user has configured custom filters, ensure generic placeholder "all-projects" / "default-all" doesn't linger
+            custom_filters = [f for f in saved if f.get("id") not in {"all-projects", "default-all"}]
+            if custom_filters:
+                if len(custom_filters) != len(saved):
+                    config.configured_filters = custom_filters
+                    if config.selected_filter_id in {"all-projects", "default-all"}:
+                        config.selected_filter_id = custom_filters[0]["id"]
+                        config.selected_filter_name = custom_filters[0]["name"]
+                        config.filter_jql = custom_filters[0]["jql"]
+                    db.commit()
+                return custom_filters
             return saved
 
         # Fallback to selected_filter_id if configured_filters is not populated yet
-        if config.selected_filter_id:
+        if config.selected_filter_id and config.selected_filter_id not in {"all-projects", "default-all"}:
             fallback = [{
                 "id": config.selected_filter_id,
                 "name": config.selected_filter_name or f"Filtro #{config.selected_filter_id}",
@@ -328,6 +339,11 @@ class JiraService:
         if not target_jql:
             target_jql = "project is not EMPTY ORDER BY created DESC"
 
+        # If current filters only contain placeholder "all-projects" or "default-all", replace it
+        if len(filters) == 1 and filters[0].get("id") in {"all-projects", "default-all"}:
+            if target_id not in {"all-projects", "default-all"}:
+                filters = []
+
         existing_idx = next((i for i, f in enumerate(filters) if f.get("id") == target_id), None)
         new_entry = {"id": target_id, "name": target_name, "jql": target_jql}
         if existing_idx is not None:
@@ -336,7 +352,7 @@ class JiraService:
             filters.append(new_entry)
 
         config.configured_filters = filters
-        if len(filters) == 1 or not config.selected_filter_id:
+        if len(filters) == 1 or not config.selected_filter_id or config.selected_filter_id in {"all-projects", "default-all"}:
             config.selected_filter_id = target_id
             config.selected_filter_name = target_name
             config.filter_jql = target_jql

@@ -59,6 +59,15 @@ def update_auth_config(data: ConfigUpdateRequest, db: Session = Depends(get_db))
         config.jira_client_secret = data.jira_client_secret
     if data.selected_filter_id is not None:
         config.selected_filter_id = data.selected_filter_id
+        if data.configured_filters is None and data.selected_filter_id not in {"all-projects", "default-all"}:
+            current = [f for f in (config.configured_filters or []) if f.get("id") not in {"all-projects", "default-all"}]
+            if not any(f.get("id") == data.selected_filter_id for f in current):
+                current.append({
+                    "id": data.selected_filter_id,
+                    "name": data.selected_filter_name or f"Filtro #{data.selected_filter_id}",
+                    "jql": data.filter_jql or ""
+                })
+            config.configured_filters = current
     if data.selected_filter_name is not None:
         config.selected_filter_name = data.selected_filter_name
     if data.filter_jql is not None:

@@ -140,8 +140,9 @@ export async function validateJiraFilter(filterId?: string, jql?: string): Promi
   return res.json();
 }
 
-export async function fetchViews(): Promise<import('../types').SavedView[]> {
-  const res = await fetch(`${API_BASE}/views`);
+export async function fetchViews(filterId?: string): Promise<import('../types').SavedView[]> {
+  const url = filterId ? `${API_BASE}/views?filter_id=${encodeURIComponent(filterId)}` : `${API_BASE}/views`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Error al obtener vistas guardadas');
   return res.json();
 }
@@ -167,7 +168,9 @@ export async function updateView(viewId: string, data: Partial<import('../types'
 }
 
 export async function deleteView(viewId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/views/${encodeURIComponent(viewId)}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/views/${encodeURIComponent(viewId)}`, {
+    method: 'DELETE',
+  });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.detail || 'Error al eliminar vista');

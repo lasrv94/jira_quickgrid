@@ -118,7 +118,7 @@ export const Toolbar: React.FC<Props> = ({
               ))}
               <option disabled className="text-gray-400">──────────</option>
               <option value="__add_jira_filter__" className="text-blue-600 font-semibold">
-                ➕ {lang === 'es' ? 'Administrar / Agregar filtros...' : 'Manage / Add Jira filters...'}
+                ➕ {lang === 'es' ? 'Administrar / Agregar proyectos...' : 'Manage / Add projects...'}
               </option>
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -126,7 +126,7 @@ export const Toolbar: React.FC<Props> = ({
           <button
             type="button"
             onClick={onOpenSettings}
-            title={lang === 'es' ? 'Administrar y agregar filtros de Jira' : 'Manage and add Jira filters'}
+            title={lang === 'es' ? 'Administrar y agregar proyectos (filtros de Jira)' : 'Manage and add projects (Jira filters)'}
             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />

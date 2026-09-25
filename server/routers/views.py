@@ -1,6 +1,6 @@
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
 from models import SavedView, SavedViewCreate, SavedViewOut, SavedViewUpdate
@@ -44,7 +44,54 @@ DEFAULT_VIEWS = [
 ]
 
 @router.get("", response_model=List[SavedViewOut])
-def list_views(db: Session = Depends(get_db)):
+def list_views(filter_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    if filter_id:
+        views = db.query(SavedView).filter(SavedView.filter_id == filter_id).order_by(SavedView.created_at.asc()).all()
+        if not views:
+            # Seed default views specifically for this project (Jira filter)
+            seeded = [
+                SavedView(
+                    id=f"view-{filter_id[:24]}-all",
+                    name="Todas las incidencias",
+                    group_by=None,
+                    sort_field="priority",
+                    sort_direction="desc",
+                    search_query="",
+                    filter_id=filter_id,
+                    visible_columns=None,
+                    is_default=True,
+                ),
+                SavedView(
+                    id=f"view-{filter_id[:24]}-status",
+                    name="Por Estado Jira",
+                    group_by="jira_status",
+                    sort_field="priority",
+                    sort_direction="desc",
+                    search_query="",
+                    filter_id=filter_id,
+                    visible_columns=None,
+                    is_default=False,
+                ),
+                SavedView(
+                    id=f"view-{filter_id[:24]}-assignee",
+                    name="Por Asignado",
+                    group_by="assignee_name",
+                    sort_field="priority",
+                    sort_direction="desc",
+                    search_query="",
+                    filter_id=filter_id,
+                    visible_columns=None,
+                    is_default=False,
+                ),
+            ]
+            for v in seeded:
+                db.add(v)
+            db.commit()
+            for v in seeded:
+                db.refresh(v)
+            return seeded
+        return views
+
     views = db.query(SavedView).order_by(SavedView.created_at.asc()).all()
     if not views:
         # Seed default views so user has immediate templates
