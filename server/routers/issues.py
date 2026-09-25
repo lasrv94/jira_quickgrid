@@ -6,8 +6,10 @@ from database import get_db
 from models import (
     BulkSetCustomValuesRequest,
     CustomColumn,
+    IssueCreate,
     IssueCustomValue,
     IssueOut,
+    IssueUpdate,
     JiraFilterOut,
     JiraIssue,
     SetCustomValueRequest,
@@ -21,6 +23,7 @@ class AddConfiguredFilterRequest(BaseModel):
     id: Optional[str] = None
     name: Optional[str] = None
     jql: Optional[str] = None
+    type: Optional[str] = "jira_filter"
 
 @router.get("/filters", response_model=List[JiraFilterOut])
 async def list_jira_filters(db: Session = Depends(get_db)):
@@ -34,7 +37,7 @@ async def list_available_jira_filters(db: Session = Depends(get_db)):
 
 @router.post("/jira/configured-filters", response_model=List[JiraFilterOut])
 async def add_configured_jira_filter(data: AddConfiguredFilterRequest, db: Session = Depends(get_db)):
-    filters = await JiraService.add_configured_filter(db, filter_id=data.id, name=data.name, jql=data.jql)
+    filters = await JiraService.add_configured_filter(db, filter_id=data.id, name=data.name, jql=data.jql, filter_type=data.type)
     return [JiraFilterOut(**f) for f in filters]
 
 @router.delete("/jira/configured-filters/{filter_id}", response_model=List[JiraFilterOut])
@@ -54,7 +57,7 @@ async def sync_jira_issues(filter_id: Optional[str] = None, db: Session = Depend
     }
 
 @router.get("/issues", response_model=List[IssueOut])
-def list_issues(include_archived: bool = Query(False), db: Session = Depends(get_db)):
+def list_issues(include_archived: bool = Query(False), table_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
     # Auto-seed mock issues ONLY in mock mode if database is empty
     config = JiraService.get_or_create_config(db)
     if config.jira_auth_type == "mock":
@@ -66,6 +69,11 @@ def list_issues(include_archived: bool = Query(False), db: Session = Depends(get
     query = db.query(JiraIssue)
     if not include_archived:
         query = query.filter(JiraIssue.is_archived_in_jira == False)
+    if table_id:
+        if table_id.startswith("tbl-") or table_id.startswith("local-"):
+            query = query.filter(JiraIssue.table_id == table_id)
+        else:
+            query = query.filter((JiraIssue.table_id == table_id) | (JiraIssue.table_id == None))
     issues = query.order_by(JiraIssue.jira_updated_at.desc()).all()
     results = []
     for issue in issues:
@@ -74,6 +82,7 @@ def list_issues(include_archived: bool = Query(False), db: Session = Depends(get
         results.append(
             IssueOut(
                 key=issue.key,
+                table_id=issue.table_id,
                 jira_id=issue.jira_id,
                 summary=issue.summary,
                 jira_status=issue.jira_status,
@@ -92,6 +101,117 @@ def list_issues(include_archived: bool = Query(False), db: Session = Depends(get
             )
         )
     return results
+
+@router.post("/issues", response_model=IssueOut)
+def create_issue(data: IssueCreate, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    key = data.key
+    if not key:
+        table_prefix = "REC"
+        if data.table_id:
+            cleaned = data.table_id.replace("tbl-", "").replace("local-", "").upper()
+            table_prefix = cleaned[:4] if cleaned else "REC"
+        existing_count = db.query(JiraIssue).filter(JiraIssue.table_id == data.table_id).count()
+        key = f"{table_prefix}-{existing_count + 1}"
+        while db.query(JiraIssue).filter(JiraIssue.key == key).first():
+            existing_count += 1
+            key = f"{table_prefix}-{existing_count + 1}"
+
+    new_issue = JiraIssue(
+        key=key,
+        table_id=data.table_id,
+        jira_id=None,
+        summary=data.summary or "Nuevo registro",
+        jira_status=data.jira_status or "To Do",
+        jira_status_category=data.jira_status_category or "To Do",
+        issue_type=data.issue_type or "Record",
+        priority=data.priority or "Medium",
+        assignee_name=data.assignee_name,
+        jira_created_at=now,
+        jira_updated_at=now,
+        last_synced_at=now,
+        is_archived_in_jira=False
+    )
+    db.add(new_issue)
+    db.commit()
+    db.refresh(new_issue)
+    return IssueOut(
+        key=new_issue.key,
+        table_id=new_issue.table_id,
+        jira_id=new_issue.jira_id,
+        summary=new_issue.summary,
+        jira_status=new_issue.jira_status,
+        jira_status_category=new_issue.jira_status_category,
+        issue_type=new_issue.issue_type,
+        priority=new_issue.priority,
+        assignee_name=new_issue.assignee_name,
+        assignee_avatar=new_issue.assignee_avatar,
+        reporter_name=new_issue.reporter_name,
+        jira_created_at=new_issue.jira_created_at,
+        jira_updated_at=new_issue.jira_updated_at,
+        last_synced_at=new_issue.last_synced_at,
+        is_archived_in_jira=new_issue.is_archived_in_jira,
+        custom_values={},
+        raw_jira_fields=None
+    )
+
+@router.patch("/issues/{key}", response_model=IssueOut)
+def update_issue(key: str, data: IssueUpdate, db: Session = Depends(get_db)):
+    issue = db.query(JiraIssue).filter(JiraIssue.key == key).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if issue.jira_id is not None and not issue.table_id:
+        raise HTTPException(status_code=403, detail="Jira Cloud issues are read-only / Los tickets de Jira son de solo lectura")
+
+    now = datetime.now(timezone.utc)
+    if data.summary is not None:
+        issue.summary = data.summary
+    if data.jira_status is not None:
+        issue.jira_status = data.jira_status
+    if data.jira_status_category is not None:
+        issue.jira_status_category = data.jira_status_category
+    if data.issue_type is not None:
+        issue.issue_type = data.issue_type
+    if data.priority is not None:
+        issue.priority = data.priority
+    if data.assignee_name is not None:
+        issue.assignee_name = data.assignee_name
+    issue.jira_updated_at = now
+    db.commit()
+    db.refresh(issue)
+
+    vals = db.query(IssueCustomValue).filter(IssueCustomValue.issue_key == issue.key).all()
+    custom_dict = {v.column_id: v.value for v in vals}
+    return IssueOut(
+        key=issue.key,
+        table_id=issue.table_id,
+        jira_id=issue.jira_id,
+        summary=issue.summary,
+        jira_status=issue.jira_status,
+        jira_status_category=issue.jira_status_category,
+        issue_type=issue.issue_type,
+        priority=issue.priority,
+        assignee_name=issue.assignee_name,
+        assignee_avatar=issue.assignee_avatar,
+        reporter_name=issue.reporter_name,
+        jira_created_at=issue.jira_created_at,
+        jira_updated_at=issue.jira_updated_at,
+        last_synced_at=issue.last_synced_at,
+        is_archived_in_jira=issue.is_archived_in_jira,
+        custom_values=custom_dict,
+        raw_jira_fields=issue.raw_jira_fields
+    )
+
+@router.delete("/issues/{key}")
+def delete_issue(key: str, db: Session = Depends(get_db)):
+    issue = db.query(JiraIssue).filter(JiraIssue.key == key).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    if issue.jira_id is not None and not issue.table_id:
+        raise HTTPException(status_code=403, detail="Cannot delete Jira Cloud tickets / No se pueden eliminar tickets remotos de Jira")
+    db.delete(issue)
+    db.commit()
+    return {"status": "success", "deleted_key": key}
 
 @router.get("/jira/fields")
 async def list_jira_fields(db: Session = Depends(get_db)):

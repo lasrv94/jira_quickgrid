@@ -10,6 +10,7 @@ import {
   Edit2,
   ExternalLink,
   GripVertical,
+  Link2,
   Lock,
   Plus,
   Trash2,
@@ -20,6 +21,8 @@ import { getColorClasses } from '../utils/colors';
 import type { Language } from '../utils/i18n';
 import { getTranslation } from '../utils/i18n';
 import { evaluateFormula } from '../utils/formulaEvaluator';
+import { evaluateLookup } from '../utils/lookupEvaluator';
+import { RecordPickerModal } from './RecordPickerModal';
 
 // ----------------- SUB-COMPONENTS FOR BULLETPROOF EDITING -----------------
 
@@ -204,7 +207,7 @@ const SelectDropdown: React.FC<SelectDropdownProps> = ({
   );
 };
 
-// ----------------- CLIPBOARD & AIRTABLE-STYLE COPY/PASTE HELPERS -----------------
+// ----------------- CLIPBOARD & SPREADSHEET-STYLE COPY/PASTE HELPERS -----------------
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -243,7 +246,7 @@ async function readTextFromClipboard(): Promise<string> {
 }
 
 /**
- * Parses tab-separated values (TSV) from Excel / Airtable / Google Sheets clipboard data,
+ * Parses tab-separated values (TSV) from Excel / Spreadsheet / Google Sheets clipboard data,
  * handling double quotes and embedded newlines correctly.
  */
 function parseClipboardTable(text: string): string[][] {
@@ -362,13 +365,20 @@ function parseValueForColumn(rawValue: string, column: CustomColumn): any {
     return rawValue;
   }
 
+  if (column.type === 'link_row') {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return null;
+    return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
   return undefined;
 }
 
 function getCellValueAsText(
   issue: JiraIssue,
   colId: string,
-  columns: CustomColumn[]
+  columns: CustomColumn[],
+  allIssues?: JiraIssue[]
 ): string {
   if (colId === 'key') return issue.key || '';
   if (colId === 'summary') return issue.summary || '';
@@ -395,6 +405,16 @@ function getCellValueAsText(
   if (col.type === 'formula') {
     const result = evaluateFormula(col.formula, issue, columns);
     return result !== null && result !== undefined ? String(result) : '';
+  }
+
+  if (col.type === 'link_row') {
+    if (!rawCustom) return '';
+    return Array.isArray(rawCustom) ? rawCustom.join(', ') : String(rawCustom);
+  }
+
+  if (col.type === 'lookup') {
+    const results = evaluateLookup(issue, col, columns, allIssues || []);
+    return results.map((r) => r.label).join(', ');
   }
 
   if (col.type === 'jira_field' || col.jira_field_key) {
@@ -438,8 +458,12 @@ function getCellValueAsText(
 interface Props {
   issues: JiraIssue[];
   columns: CustomColumn[];
+  allIssues?: JiraIssue[];
+  tables?: import('../types').JiraFilter[];
   onUpdateCustomValue: (issueKey: string, columnId: string, value: any) => Promise<void>;
   onUpdateCustomValuesBulk?: (updates: Array<{ issueKey: string; columnId: string; value: any }>) => Promise<void>;
+  onUpdateLocalIssue?: (key: string, data: Partial<JiraIssue>) => Promise<void>;
+  onDeleteIssue?: (key: string) => Promise<void>;
   onOpenArchivyDrawer: (issue: JiraIssue) => void;
   onOpenAddColumn: () => void;
   onOpenEditColumn?: (col: CustomColumn) => void;
@@ -454,8 +478,12 @@ interface Props {
 export const DataGrid: React.FC<Props> = ({
   issues,
   columns,
+  allIssues,
+  tables,
   onUpdateCustomValue,
   onUpdateCustomValuesBulk,
+  onUpdateLocalIssue,
+  onDeleteIssue,
   onOpenArchivyDrawer,
   onOpenAddColumn,
   onOpenEditColumn,
@@ -475,7 +503,39 @@ export const DataGrid: React.FC<Props> = ({
   // Active dropdown open (for single_select)
   const [activeDropdown, setActiveDropdown] = useState<{ issueKey: string; colId: string } | null>(null);
 
-  // Airtable / Excel style cell selection and copy/paste state
+  // Active record picker modal (for link_row)
+  const [activePicker, setActivePicker] = useState<{
+    issueKey: string;
+    column: CustomColumn;
+    selectedKeys: string[];
+    targetTableName: string;
+    targetIssues: JiraIssue[];
+  } | null>(null);
+
+  const handleOpenPicker = (issue: JiraIssue, col: CustomColumn) => {
+    const targetTableId = col.link_row?.target_table_id;
+    const targetTable = tables?.find((t) => t.id === targetTableId);
+    const targetTableName = targetTable?.name || targetTableId || 'Records';
+    const pool = allIssues && allIssues.length > 0 ? allIssues : issues;
+    const targetIssues = targetTableId ? pool.filter((i) => i.table_id === targetTableId) : pool;
+
+    const rawVal = issue.custom_values?.[col.id];
+    const selectedKeys: string[] = Array.isArray(rawVal)
+      ? rawVal
+      : rawVal
+      ? [String(rawVal)]
+      : [];
+
+    setActivePicker({
+      issueKey: issue.key,
+      column: col,
+      selectedKeys,
+      targetTableName,
+      targetIssues,
+    });
+  };
+
+  // Grid / Spreadsheet style cell selection and copy/paste state
   const [selectedCell, setSelectedCell] = useState<{ issueKey: string; colId: string } | null>(null);
   const [selectionEndCell, setSelectionEndCell] = useState<{ issueKey: string; colId: string } | null>(null);
   const [isSelecting, setIsSelecting] = useState<boolean>(false);
@@ -648,7 +708,7 @@ export const DataGrid: React.FC<Props> = ({
       if (!issue) continue;
       for (let c = rangeBounds.minCol; c <= rangeBounds.maxCol; c++) {
         const cid = allColumnIds[c];
-        const textVal = getCellValueAsText(issue, cid, columns).trim();
+        const textVal = getCellValueAsText(issue, cid, columns, allIssues || issues).trim();
         const num = Number(textVal);
         if (textVal !== '' && !isNaN(num)) {
           numericSum += num;
@@ -663,7 +723,7 @@ export const DataGrid: React.FC<Props> = ({
       numericCount,
       numericAvg: numericCount > 0 ? numericSum / numericCount : null,
     };
-  }, [rangeBounds, visibleIssues, allColumnIds, columns]);
+  }, [rangeBounds, visibleIssues, allColumnIds, columns, allIssues, issues]);
 
 
   const getCellClasses = useCallback(
@@ -828,7 +888,7 @@ export const DataGrid: React.FC<Props> = ({
       if (specifiedIssueKey && specifiedColId) {
         const issue = issues.find((i) => i.key === specifiedIssueKey);
         if (!issue) return;
-        textToCopy = getCellValueAsText(issue, specifiedColId, columns);
+        textToCopy = getCellValueAsText(issue, specifiedColId, columns, allIssues || issues);
         setCopiedCell({ issueKey: specifiedIssueKey, colId: specifiedColId });
       } else if (
         selectedCell &&
@@ -855,7 +915,7 @@ export const DataGrid: React.FC<Props> = ({
             const colsText: string[] = [];
             for (let c = minCol; c <= maxCol; c++) {
               const cid = allColumnIds[c];
-              colsText.push(getCellValueAsText(rowIssue, cid, columns));
+              colsText.push(getCellValueAsText(rowIssue, cid, columns, allIssues || issues));
             }
             rows.push(colsText.join('\t'));
           }
@@ -865,7 +925,7 @@ export const DataGrid: React.FC<Props> = ({
       } else if (selectedCell) {
         const issue = issues.find((i) => i.key === selectedCell.issueKey);
         if (!issue) return;
-        textToCopy = getCellValueAsText(issue, selectedCell.colId, columns);
+        textToCopy = getCellValueAsText(issue, selectedCell.colId, columns, allIssues || issues);
         setCopiedCell({ issueKey: selectedCell.issueKey, colId: selectedCell.colId });
       } else {
         return;
@@ -890,10 +950,10 @@ export const DataGrid: React.FC<Props> = ({
         }, 2000);
       });
     },
-    [issues, columns, selectedCell, selectionEndCell, visibleIssues, allColumnIds, lang]
+    [issues, columns, allIssues, selectedCell, selectionEndCell, visibleIssues, allColumnIds, lang]
   );
 
-  // Paste handler (Airtable / Excel matrix paste logic)
+  // Paste handler (Matrix paste logic)
   const handlePasteData = useCallback(
     async (clipboardText: string, targetCellOverride?: { issueKey: string; colId: string }) => {
       const activeStart = targetCellOverride || selectedCell;
@@ -917,7 +977,7 @@ export const DataGrid: React.FC<Props> = ({
       let attemptedReadOnlyCount = 0;
 
       if (isSingleValue && hasRange && selectedCell && selectionEndCell) {
-        // Excel/Airtable behavior: If pasting 1 value onto a selected range, fill all editable cells in the range
+        // Spreadsheet behavior: If pasting 1 value onto a selected range, fill all editable cells in the range
         const singleRawVal = matrix[0][0];
         const endRowIdx = visibleIssues.findIndex((i) => i.key === selectionEndCell.issueKey);
         const endColIdx = allColumnIds.indexOf(selectionEndCell.colId);
@@ -938,7 +998,8 @@ export const DataGrid: React.FC<Props> = ({
               col.type === 'archivy_link' ||
               col.type === 'jira_field' ||
               col.jira_field_key ||
-              col.type === 'formula'
+              col.type === 'formula' ||
+              col.type === 'lookup'
             ) {
               attemptedReadOnlyCount++;
               continue;
@@ -968,7 +1029,8 @@ export const DataGrid: React.FC<Props> = ({
               col.type === 'archivy_link' ||
               col.type === 'jira_field' ||
               col.jira_field_key ||
-              col.type === 'formula'
+              col.type === 'formula' ||
+              col.type === 'lookup'
             ) {
               attemptedReadOnlyCount++;
               continue;
@@ -1110,7 +1172,8 @@ export const DataGrid: React.FC<Props> = ({
           col.type === 'archivy_link' ||
           col.type === 'jira_field' ||
           col.jira_field_key ||
-          col.type === 'formula'
+          col.type === 'formula' ||
+          col.type === 'lookup'
         ) {
           continue;
         }
@@ -1165,7 +1228,7 @@ export const DataGrid: React.FC<Props> = ({
     return () => window.removeEventListener('paste', handlePasteEvent);
   }, [selectedCell, handlePasteData]);
 
-  // Airtable / Excel Style Keyboard Navigation & Shortcuts
+  // Grid / Spreadsheet Style Keyboard Navigation & Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // If user is currently typing in an input or textarea, let default browser behavior handle it
@@ -1225,7 +1288,7 @@ export const DataGrid: React.FC<Props> = ({
             setActiveDropdown({ issueKey: selectedCell.issueKey, colId: selectedCell.colId });
           } else if (col.type === 'formula') {
             onOpenEditColumn?.(col);
-          } else if (col.type !== 'jira_field' && col.type !== 'archivy_link') {
+          } else if (col.type !== 'jira_field' && col.type !== 'archivy_link' && col.type !== 'lookup') {
             const val = issue.custom_values?.[col.id];
             setEditingCell({
               issueKey: selectedCell.issueKey,
@@ -1237,7 +1300,7 @@ export const DataGrid: React.FC<Props> = ({
         return;
       }
 
-      // 4. Arrow navigation (Airtable/Excel-style keyboard navigation & Shift range selection)
+      // 4. Arrow navigation (Spreadsheet-style keyboard navigation & Shift range selection)
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
         const anchor = selectionEndCell || selectedCell;
@@ -1750,14 +1813,46 @@ export const DataGrid: React.FC<Props> = ({
                       className="hover:bg-blue-50/30 transition-colors group border-b border-gray-100"
                     >
                       {/* Row Index */}
-                      <td
-                        onMouseDown={(e) => handleRowIndexMouseDown(issue.key, e)}
-                        onMouseEnter={() => handleRowIndexMouseEnter(issue.key)}
-                        className="px-3 py-2 text-center text-gray-400 font-mono text-[11px] border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-0 z-10 cursor-pointer select-none hover:text-blue-600 transition-colors"
-                        title={lang === 'es' ? 'Clic o arrastrar para seleccionar fila completa' : 'Click or drag to select entire row'}
-                      >
-                        {idx + 1}
-                      </td>
+                      {(() => {
+                        const isLocalIssue = Boolean(issue.table_id?.startsWith('tbl-') || !issue.jira_id);
+                        return (
+                          <td
+                            onMouseDown={(e) => handleRowIndexMouseDown(issue.key, e)}
+                            onMouseEnter={() => handleRowIndexMouseEnter(issue.key)}
+                            className="px-2 py-2 text-center text-gray-400 font-mono text-[11px] border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-0 z-10 cursor-pointer select-none hover:text-blue-600 transition-colors"
+                            title={lang === 'es' ? 'Clic o arrastrar para seleccionar fila completa' : 'Click or drag to select entire row'}
+                          >
+                            <div className="flex items-center justify-center relative group/rowidx">
+                              {isLocalIssue && onDeleteIssue ? (
+                                <>
+                                  <span className="group-hover/rowidx:hidden">{idx + 1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (
+                                        window.confirm(
+                                          lang === 'es'
+                                            ? `¿Eliminar fila ${issue.key}?`
+                                            : `Delete row ${issue.key}?`
+                                        )
+                                      ) {
+                                        onDeleteIssue(issue.key);
+                                      }
+                                    }}
+                                    className="hidden group-hover/rowidx:flex items-center justify-center p-0.5 text-rose-500 hover:text-rose-700 transition-colors"
+                                    title={lang === 'es' ? 'Eliminar fila' : 'Delete row'}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </>
+                              ) : (
+                                <span>{idx + 1}</span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })()}
 
                       {/* Key */}
                       <td
@@ -1815,38 +1910,86 @@ export const DataGrid: React.FC<Props> = ({
                       </td>
 
                       {/* Summary */}
-                      <td
-                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'summary', e)}
-                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'summary')}
-                        onClick={(e) => handleCellClick(issue.key, 'summary', e)}
-                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${getCellClasses(
-                          issue.key,
-                          'summary'
-                        )}`}
-                        title={
-                          lang === 'es'
-                            ? `${issue.summary} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.summary} (Click or drag to select, Ctrl+C to copy)`
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="truncate" title={issue.summary}>
-                            {issue.summary}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyCell(issue.key, 'summary');
+                      {(() => {
+                        const isLocalIssue = Boolean(issue.table_id?.startsWith('tbl-') || !issue.jira_id);
+                        const isEditingSummary = editingCell?.issueKey === issue.key && editingCell?.colId === 'summary';
+
+                        return (
+                          <td
+                            onMouseDown={(e) => handleCellMouseDown(issue.key, 'summary', e)}
+                            onMouseEnter={() => handleCellMouseEnter(issue.key, 'summary')}
+                            onClick={(e) => handleCellClick(issue.key, 'summary', e)}
+                            onDoubleClick={(e) => {
+                              if (isLocalIssue && onUpdateLocalIssue) {
+                                e.stopPropagation();
+                                setEditingCell({
+                                  issueKey: issue.key,
+                                  colId: 'summary',
+                                  initialVal: issue.summary || '',
+                                });
+                              }
                             }}
-                            title={lang === 'es' ? 'Copiar resumen (Ctrl+C)' : 'Copy summary (Ctrl+C)'}
-                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                            className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${getCellClasses(
+                              issue.key,
+                              'summary'
+                            )}`}
+                            title={
+                              isLocalIssue
+                                ? `${issue.summary} (${lang === 'es' ? 'Doble clic para editar' : 'Double click to edit'})`
+                                : `${issue.summary} (${lang === 'es' ? 'Clic o arrastrar para seleccionar, Ctrl+C para copiar' : 'Click or drag to select, Ctrl+C to copy'})`
+                            }
                           >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {renderCornerHandle(issue.key, 'summary')}
-                      </td>
+                            {isEditingSummary && onUpdateLocalIssue ? (
+                              <InlineCellEditor
+                                initialValue={issue.summary || ''}
+                                type="text"
+                                onSave={(newVal) => {
+                                  onUpdateLocalIssue(issue.key, { summary: newVal });
+                                  setEditingCell(null);
+                                }}
+                                onCancel={() => setEditingCell(null)}
+                              />
+                            ) : (
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="truncate" title={issue.summary}>
+                                  {issue.summary}
+                                </span>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  {isLocalIssue && onUpdateLocalIssue && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingCell({
+                                          issueKey: issue.key,
+                                          colId: 'summary',
+                                          initialVal: issue.summary || '',
+                                        });
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer"
+                                      title={lang === 'es' ? 'Editar resumen' : 'Edit summary'}
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(issue.key, 'summary');
+                                    }}
+                                    title={lang === 'es' ? 'Copiar resumen (Ctrl+C)' : 'Copy summary (Ctrl+C)'}
+                                    className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {renderCornerHandle(issue.key, 'summary')}
+                          </td>
+                        );
+                      })()}
 
                       {/* Jira Status */}
                       <td
@@ -2245,6 +2388,164 @@ export const DataGrid: React.FC<Props> = ({
                           );
                         }
 
+                        // 3.6. Linked Records Column (link_row)
+                        if (col.type === 'link_row') {
+                          const linkedKeys: string[] = Array.isArray(rawCustomValue)
+                            ? rawCustomValue
+                            : rawCustomValue
+                            ? [String(rawCustomValue)]
+                            : [];
+
+                          const pool = allIssues && allIssues.length > 0 ? allIssues : issues;
+
+                          return (
+                            <td
+                              key={col.id}
+                              onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                              onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
+                              onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPicker(issue, col);
+                              }}
+                              className={`px-2.5 py-1.5 border-r border-gray-100 max-w-[280px] cursor-pointer group/cell transition-all ${getCellClasses(
+                                issue.key,
+                                col.id
+                              )}`}
+                              title={
+                                lang === 'es'
+                                  ? 'Doble clic para vincular registros'
+                                  : 'Double click to link records'
+                              }
+                            >
+                              <div className="flex items-center justify-between min-h-[24px] gap-1.5">
+                                <div className="flex items-center gap-1 flex-wrap overflow-hidden flex-1">
+                                  {linkedKeys.length > 0 ? (
+                                    linkedKeys.map((key) => {
+                                      const matchedIssue = pool.find((i) => i.key === key);
+                                      return (
+                                        <span
+                                          key={key}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs group/pill"
+                                          title={matchedIssue ? `${key}: ${matchedIssue.summary}` : key}
+                                        >
+                                          <Link2 className="w-2.5 h-2.5 text-blue-500 shrink-0" />
+                                          <span className="font-mono">{key}</span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const next = linkedKeys.filter((k) => k !== key);
+                                              onUpdateCustomValue(issue.key, col.id, next);
+                                            }}
+                                            className="opacity-0 group-hover/pill:opacity-100 hover:text-rose-600 transition-opacity ml-0.5 cursor-pointer"
+                                            title={lang === 'es' ? 'Desvincular' : 'Unlink'}
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        </span>
+                                      );
+                                    })
+                                  ) : (
+                                    <span className="text-gray-400 italic text-xs">
+                                      {lang === 'es' ? 'Sin registros' : 'No records'}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenPicker(issue, col);
+                                    }}
+                                    className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Vincular registro (+)' : 'Link record (+)'}
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(issue.key, col.id);
+                                    }}
+                                    className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Copiar (Ctrl+C)' : 'Copy (Ctrl+C)'}
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                              {renderCornerHandle(issue.key, col.id)}
+                            </td>
+                          );
+                        }
+
+                        // 3.7. Lookup Column (lookup) (STRICTLY READ-ONLY)
+                        if (col.type === 'lookup') {
+                          const pool = allIssues && allIssues.length > 0 ? allIssues : issues;
+                          const lookupResults = evaluateLookup(issue, col, columns, pool);
+
+                          return (
+                            <td
+                              key={col.id}
+                              onMouseDown={(e) => handleCellMouseDown(issue.key, col.id, e)}
+                              onMouseEnter={() => handleCellMouseEnter(issue.key, col.id)}
+                              onClick={(e) => handleCellClick(issue.key, col.id, e)}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                if (onOpenEditColumn) {
+                                  onOpenEditColumn(col);
+                                }
+                              }}
+                              className={`px-2.5 py-1.5 border-r border-gray-100 max-w-[280px] bg-amber-50/15 cursor-pointer group/cell transition-all ${getCellClasses(
+                                issue.key,
+                                col.id
+                              )}`}
+                              title={
+                                lookupResults.length > 0
+                                  ? lookupResults.map((r) => `${r.issueKey}: ${r.label}`).join('\n')
+                                  : lang === 'es'
+                                  ? 'Lookup sin valores'
+                                  : 'Lookup empty'
+                              }
+                            >
+                              <div className="flex items-center justify-between min-h-[24px] gap-1.5">
+                                <div className="flex items-center gap-1 flex-wrap overflow-hidden flex-1">
+                                  {lookupResults.length > 0 ? (
+                                    lookupResults.map((r, i) => (
+                                      <span
+                                        key={i}
+                                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs truncate"
+                                        title={`${r.issueKey}: ${r.label}`}
+                                      >
+                                        {r.label}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-gray-400 italic text-xs">-</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyCell(issue.key, col.id);
+                                    }}
+                                    className="opacity-0 group-hover/cell:opacity-100 p-1 rounded text-gray-400 hover:text-amber-600 hover:bg-amber-100/80 transition-all cursor-pointer"
+                                    title={lang === 'es' ? 'Copiar (Ctrl+C)' : 'Copy (Ctrl+C)'}
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                              {renderCornerHandle(issue.key, col.id)}
+                            </td>
+                          );
+                        }
+
                         // 4. Standard Custom Columns (Text, Long Text, Number, Date)
                         const displayVal =
                           rawCustomValue !== null && rawCustomValue !== undefined ? String(rawCustomValue) : '';
@@ -2360,7 +2661,7 @@ export const DataGrid: React.FC<Props> = ({
         </tbody>
       </table>
 
-      {/* Airtable / Excel-style Floating Selection Action Bar */}
+      {/* Spreadsheet-style Floating Selection Action Bar */}
       {rangeStats && rangeStats.hasRange && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2 bg-gray-900/95 text-white text-xs font-medium rounded-xl shadow-2xl border border-gray-700/80 backdrop-blur-md animate-in fade-in slide-in-from-bottom-3 duration-150 select-none">
           <div className="flex items-center gap-2 pr-3 border-r border-gray-700/80">
@@ -2430,7 +2731,7 @@ export const DataGrid: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Airtable-style Floating Copy Toast */}
+      {/* Floating Copy Toast */}
       {copyToast && (
         <div
           className={`fixed ${
@@ -2446,7 +2747,7 @@ export const DataGrid: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Airtable-style Floating Paste Toast */}
+      {/* Floating Paste Toast */}
       {pasteToast && (
         <div
           className={`fixed ${
@@ -2472,6 +2773,23 @@ export const DataGrid: React.FC<Props> = ({
             Ctrl+V
           </span>
         </div>
+      )}
+
+      {/* Record Picker Modal for Linked Records */}
+      {activePicker && (
+        <RecordPickerModal
+          isOpen={true}
+          onClose={() => setActivePicker(null)}
+          onSave={(selectedKeys) => {
+            onUpdateCustomValue(activePicker.issueKey, activePicker.column.id, selectedKeys);
+            setActivePicker(null);
+          }}
+          targetTableName={activePicker.targetTableName}
+          availableIssues={activePicker.targetIssues}
+          selectedKeys={activePicker.selectedKeys}
+          allowMultiple={activePicker.column.link_row?.allow_multiple ?? true}
+          lang={lang}
+        />
       )}
     </div>
   );

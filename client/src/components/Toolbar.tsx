@@ -2,11 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   ArrowDownUp,
   Check,
-  ChevronDown,
   Columns,
   FileDown,
   Filter,
   Layers,
+  PanelLeft,
   Plus,
   RefreshCw,
   Search,
@@ -20,12 +20,16 @@ import { getTranslation } from '../utils/i18n';
 import { FilterMenu } from './FilterMenu';
 
 interface Props {
-  filters: JiraFilter[];
+  filters?: JiraFilter[];
   selectedFilterId?: string;
-  onSelectFilter: (filterId: string) => void;
+  onSelectFilter?: (filterId: string) => void;
   onSync: () => Promise<void>;
   syncing: boolean;
   lastSync?: string;
+  isLocalTable?: boolean;
+  onAddRow?: () => void;
+  isViewsSidebarOpen?: boolean;
+  onToggleViewsSidebar?: () => void;
   columns: CustomColumn[];
   onToggleColumnVisibility: (colId: string) => void;
   onOpenManageFields?: () => void;
@@ -50,12 +54,16 @@ interface Props {
 }
 
 export const Toolbar: React.FC<Props> = ({
-  filters,
-  selectedFilterId,
-  onSelectFilter,
+  filters: _filters = [],
+  selectedFilterId: _selectedFilterId,
+  onSelectFilter: _onSelectFilter,
   onSync,
   syncing,
   lastSync,
+  isLocalTable = false,
+  onAddRow,
+  isViewsSidebarOpen = true,
+  onToggleViewsSidebar,
   columns,
   onToggleColumnVisibility,
   onOpenManageFields,
@@ -128,57 +136,53 @@ export const Toolbar: React.FC<Props> = ({
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs select-none shrink-0">
-      {/* Left controls: Jira Filter & Sync */}
+      {/* Left controls: Toggle Views, Add Row, Sync */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Jira Filter Selector */}
-        <div className="relative flex items-center gap-1">
-          <div className="relative">
-            <select
-              value={selectedFilterId || ''}
-              onChange={(e) => {
-                if (e.target.value === '__add_jira_filter__') {
-                  onOpenSettings();
-                  return;
-                }
-                onSelectFilter(e.target.value);
-              }}
-              className="text-xs font-medium text-gray-800 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-xs transition-colors pr-7 appearance-none"
-            >
-              {filters.map((f) => (
-                <option key={f.id} value={f.id}>
-                  📁 {f.name}
-                </option>
-              ))}
-              <option disabled className="text-gray-400">──────────</option>
-              <option value="__add_jira_filter__" className="text-blue-600 font-semibold">
-                ➕ {lang === 'es' ? 'Administrar / Agregar proyectos...' : 'Manage / Add projects...'}
-              </option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+        {onToggleViewsSidebar && (
           <button
             type="button"
-            onClick={onOpenSettings}
-            title={lang === 'es' ? 'Administrar y agregar proyectos (filtros de Jira)' : 'Manage and add projects (Jira filters)'}
-            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-200 transition-colors"
+            onClick={onToggleViewsSidebar}
+            title={lang === 'es' ? 'Mostrar / Ocultar panel de vistas' : 'Toggle views panel'}
+            className={`p-1.5 rounded-lg border transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${
+              isViewsSidebarOpen
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-white hover:bg-gray-100 text-gray-700 border-gray-200'
+            }`}
+          >
+            <PanelLeft className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{lang === 'es' ? 'Vistas' : 'Views'}</span>
+          </button>
+        )}
+
+        {onAddRow && (
+          <button
+            type="button"
+            onClick={onAddRow}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
+            <span>{lang === 'es' ? 'Nueva Fila' : 'New Row'}</span>
           </button>
-        </div>
+        )}
 
         {/* Sync Button */}
-        <button
-          onClick={onSync}
-          disabled={syncing}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors shadow-xs"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-          <span>{syncing ? t.syncing_btn : t.sync_btn}</span>
-        </button>
+        {!isLocalTable && (
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors shadow-xs cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            <span>{syncing ? t.syncing_btn : t.sync_btn}</span>
+          </button>
+        )}
 
-        <span className="text-[11px] text-gray-400 hidden sm:inline">
-          {t.sync_label}: <strong className="text-gray-600 font-medium">{formatLastSync(lastSync)}</strong>
-        </span>
+        {!isLocalTable && (
+          <span className="text-[11px] text-gray-400 hidden sm:inline">
+            {t.sync_label}: <strong className="text-gray-600 font-medium">{formatLastSync(lastSync)}</strong>
+          </span>
+        )}
       </div>
 
       {/* Middle & Right tools: Search, Sort, Group, Columns, Settings */}

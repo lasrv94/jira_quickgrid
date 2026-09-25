@@ -182,7 +182,7 @@ export const SettingsModal: React.FC<Props> = ({
       if (filterId === id) {
         if (updated.length > 0) {
           setFilterId(updated[0].id);
-          setFilterJql(updated[0].jql);
+          setFilterJql(updated[0].jql || '');
         } else {
           setFilterId('');
           setFilterJql('');
@@ -198,7 +198,7 @@ export const SettingsModal: React.FC<Props> = ({
 
   const handleSelectActiveFilter = async (f: JiraFilter) => {
     setFilterId(f.id);
-    setFilterJql(f.jql);
+    setFilterJql(f.jql || '');
     try {
       await updateConfig({
         selected_filter_id: f.id,

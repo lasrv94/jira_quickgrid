@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Database, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Database, Link2, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import { fetchJiraFields } from '../services/api';
-import type { ColumnType, CustomColumn, JiraFieldInfo, SelectOption } from '../types';
+import type { ColumnType, CustomColumn, JiraFieldInfo, JiraFilter, SelectOption } from '../types';
 import { COLOR_OPTIONS } from '../utils/colors';
 import type { Language } from '../utils/i18n';
 import { FormulaEditor } from './FormulaEditor';
@@ -12,6 +12,8 @@ interface Props {
   onClose: () => void;
   onAddColumn: (col: Partial<CustomColumn>) => Promise<void>;
   existingColumns?: CustomColumn[];
+  tables?: JiraFilter[];
+  activeTableId?: string;
   lang?: Language;
 }
 
@@ -20,6 +22,8 @@ export const AddColumnModal: React.FC<Props> = ({
   onClose,
   onAddColumn,
   existingColumns = [],
+  tables = [],
+  activeTableId,
   lang = 'es',
 }) => {
   const [columnCategory, setColumnCategory] = useState<'local' | 'jira'>('local');
@@ -31,6 +35,14 @@ export const AddColumnModal: React.FC<Props> = ({
     { id: 'opt-2', label: 'Opción 2', color: 'amber' },
   ]);
 
+  // Link to table state
+  const [targetTableId, setTargetTableId] = useState<string>('');
+  const [allowMultipleLinks, setAllowMultipleLinks] = useState(true);
+
+  // Lookup state
+  const [linkColumnId, setLinkColumnId] = useState<string>('');
+  const [lookupFieldId, setLookupFieldId] = useState<string>('jira_status');
+
   const [jiraFieldKey, setJiraFieldKey] = useState('');
   const [jiraFields, setJiraFields] = useState<JiraFieldInfo[]>([]);
   const [jiraFieldSearch, setJiraFieldSearch] = useState('');
@@ -41,8 +53,15 @@ export const AddColumnModal: React.FC<Props> = ({
       fetchJiraFields()
         .then((f) => setJiraFields(f))
         .catch((e) => console.error('Error fetching Jira fields:', e));
+
+      // Default target table to first available table different from current or first
+      const defaultTarget = tables.find((t) => t.id !== activeTableId) || tables[0];
+      if (defaultTarget) setTargetTableId(defaultTarget.id);
+
+      const linkCol = existingColumns.find((c) => c.type === 'link_row');
+      if (linkCol) setLinkColumnId(linkCol.id);
     }
-  }, [isOpen]);
+  }, [isOpen, tables, activeTableId, existingColumns]);
 
   if (!isOpen) return null;
 
@@ -81,6 +100,9 @@ export const AddColumnModal: React.FC<Props> = ({
           width: 170,
         });
       } else {
+        let finalOptions: any = [];
+        let finalFormula: string | undefined = undefined;
+
         if (type === 'formula') {
           const check = validateFormula(formula);
           if (!check.valid) {
@@ -88,14 +110,32 @@ export const AddColumnModal: React.FC<Props> = ({
             setLoading(false);
             return;
           }
+          finalFormula = formula.trim();
+          finalOptions = options;
+        } else if (type === 'single_select') {
+          finalOptions = options;
+        } else if (type === 'link_row') {
+          const targetTbl = tables.find((t) => t.id === targetTableId) || tables[0];
+          finalOptions = {
+            target_table_id: targetTbl?.id || '',
+            target_table_name: targetTbl?.name || '',
+            allow_multiple: allowMultipleLinks,
+          };
+        } else if (type === 'lookup') {
+          const targetLinkCol = existingColumns.find((c) => c.id === linkColumnId) || existingColumns.find((c) => c.type === 'link_row');
+          finalOptions = {
+            link_column_id: targetLinkCol?.id || '',
+            lookup_field_id: lookupFieldId,
+          };
         }
+
         await onAddColumn({
           name: name.trim(),
           type,
-          options: type === 'single_select' || type === 'formula' ? options : [],
-          formula: type === 'formula' ? formula.trim() : undefined,
+          options: finalOptions,
+          formula: finalFormula,
           is_visible: true,
-          width: type === 'long_text' ? 240 : type === 'formula' ? 140 : 170,
+          width: type === 'long_text' ? 240 : type === 'formula' ? 140 : type === 'link_row' ? 200 : 170,
         });
       }
       setName('');
@@ -253,6 +293,8 @@ export const AddColumnModal: React.FC<Props> = ({
                 >
                   <option value="single_select">Selección Única (Color Pills)</option>
                   <option value="formula">Fórmula / Campo Calculado (fx)</option>
+                  <option value="link_row">🔗 Registros Vinculados (Link to Table)</option>
+                  <option value="lookup">🔍 Lookup (Consultar registro vinculado)</option>
                   <option value="text">Texto Corto</option>
                   <option value="long_text">Texto Largo / Notas (Multi-línea)</option>
                   <option value="number">Número</option>
@@ -260,6 +302,103 @@ export const AddColumnModal: React.FC<Props> = ({
                   <option value="archivy_link">Vínculo Archivy Wiki (Markdown Docs)</option>
                 </select>
               </div>
+
+              {type === 'link_row' && (
+                <div className="space-y-3 border-t border-gray-100 pt-3 bg-blue-50/40 p-3 rounded-lg border border-blue-100">
+                  <div className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                    <Link2 className="w-4 h-4 text-blue-600" />
+                    <span>Configuración de Vínculo entre Tablas</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Tabla o Proyecto a Vincular:
+                    </label>
+                    <select
+                      value={targetTableId}
+                      onChange={(e) => setTargetTableId(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {tables.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.type === 'local' ? '📋 ' : '📁 '} {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={allowMultipleLinks}
+                      onChange={(e) => setAllowMultipleLinks(e.target.checked)}
+                      className="rounded text-blue-600 focus:ring-0"
+                    />
+                    <span>Permitir vincular múltiples registros por fila</span>
+                  </label>
+                </div>
+              )}
+
+              {type === 'lookup' && (
+                <div className="space-y-3 border-t border-gray-100 pt-3 bg-purple-50/40 p-3 rounded-lg border border-purple-100">
+                  <div className="text-xs font-bold text-purple-900 flex items-center gap-1.5">
+                    <Database className="w-4 h-4 text-purple-600" />
+                    <span>Configuración de Campo Lookup</span>
+                  </div>
+
+                  {existingColumns.filter((c) => c.type === 'link_row').length === 0 ? (
+                    <div className="p-2.5 bg-amber-50 text-amber-800 rounded text-xs border border-amber-200">
+                      ⚠️ Para usar Lookup, primero debes crear al menos una columna de tipo <strong>Registros Vinculados</strong> en esta tabla.
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          A través de la columna vinculada:
+                        </label>
+                        <select
+                          value={linkColumnId}
+                          onChange={(e) => setLinkColumnId(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          {existingColumns
+                            .filter((c) => c.type === 'link_row')
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                🔗 {c.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          Campo a consultar (Lookup):
+                        </label>
+                        <select
+                          value={lookupFieldId}
+                          onChange={(e) => setLookupFieldId(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="jira_status">Estado (Status)</option>
+                          <option value="summary">Resumen / Título (Summary)</option>
+                          <option value="priority">Prioridad (Priority)</option>
+                          <option value="assignee_name">Asignado (Assignee)</option>
+                          <option value="issue_type">Tipo (Type)</option>
+                          <option value="key">Clave / ID</option>
+                          {existingColumns
+                            .filter((c) => c.type !== 'link_row' && c.type !== 'lookup')
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                🏷️ {c.name} (Campo local)
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {type === 'single_select' && (
                 <div className="space-y-2 border-t border-gray-100 pt-3">

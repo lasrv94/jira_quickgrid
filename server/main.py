@@ -28,6 +28,16 @@ try:
             conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN formula TEXT")
             conn.commit()
 
+        if "table_id" not in col_names and len(col_names) > 0:
+            conn.exec_driver_sql("ALTER TABLE custom_columns ADD COLUMN table_id VARCHAR(128)")
+            conn.commit()
+
+        issue_rows = conn.exec_driver_sql("PRAGMA table_info(jira_issues)").fetchall()
+        issue_cols = [r[1] for r in issue_rows]
+        if "table_id" not in issue_cols and len(issue_cols) > 0:
+            conn.exec_driver_sql("ALTER TABLE jira_issues ADD COLUMN table_id VARCHAR(128)")
+            conn.commit()
+
         config_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(saved_configs)")}
         if config_cols and "jira_verify_tls" not in config_cols:
             conn.exec_driver_sql("ALTER TABLE saved_configs ADD COLUMN jira_verify_tls BOOLEAN NOT NULL DEFAULT 1")

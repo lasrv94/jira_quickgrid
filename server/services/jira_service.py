@@ -194,8 +194,8 @@ class JiraService:
         """
         config = JiraService.get_or_create_config(db)
         saved = config.configured_filters
+        res_list: List[Dict[str, Any]] = []
         if saved and isinstance(saved, list) and len(saved) > 0:
-            # If user has configured custom filters, ensure generic placeholder "all-projects" / "default-all" doesn't linger
             custom_filters = [f for f in saved if f.get("id") not in {"all-projects", "default-all"}]
             if custom_filters:
                 if len(custom_filters) != len(saved):
@@ -203,36 +203,41 @@ class JiraService:
                     if config.selected_filter_id in {"all-projects", "default-all"}:
                         config.selected_filter_id = custom_filters[0]["id"]
                         config.selected_filter_name = custom_filters[0]["name"]
-                        config.filter_jql = custom_filters[0]["jql"]
+                        config.filter_jql = custom_filters[0].get("jql") or ""
                     db.commit()
-                return custom_filters
-            return saved
-
-        # Fallback to selected_filter_id if configured_filters is not populated yet
-        if config.selected_filter_id and config.selected_filter_id not in {"all-projects", "default-all"}:
+                res_list = custom_filters
+            else:
+                res_list = saved
+        elif config.selected_filter_id and config.selected_filter_id not in {"all-projects", "default-all"}:
             fallback = [{
                 "id": config.selected_filter_id,
                 "name": config.selected_filter_name or f"Filtro #{config.selected_filter_id}",
-                "jql": config.filter_jql or ""
+                "jql": config.filter_jql or "",
+                "type": "local" if config.selected_filter_id.startswith("tbl-") else "jira_filter"
             }]
             config.configured_filters = fallback
             db.commit()
-            return fallback
-
-        if config.jira_auth_type == "mock":
-            mock_default = [MOCK_FILTERS[0]]
+            res_list = fallback
+        elif config.jira_auth_type == "mock":
+            mock_default = [{**MOCK_FILTERS[0], "type": "jira_filter"}]
             config.configured_filters = mock_default
             db.commit()
-            return mock_default
+            res_list = mock_default
+        else:
+            default_one = [{
+                "id": "my-assigned",
+                "name": "👤 Asignados a mí",
+                "jql": "assignee = currentUser() ORDER BY updated DESC",
+                "type": "jira_filter"
+            }]
+            config.configured_filters = default_one
+            db.commit()
+            res_list = default_one
 
-        default_one = [{
-            "id": "my-assigned",
-            "name": "👤 Asignados a mí",
-            "jql": "assignee = currentUser() ORDER BY updated DESC"
-        }]
-        config.configured_filters = default_one
-        db.commit()
-        return default_one
+        for f in res_list:
+            if "type" not in f:
+                f["type"] = "local" if str(f.get("id", "")).startswith("tbl-") else "jira_filter"
+        return res_list
 
     @staticmethod
     async def get_available_jira_filters(db: Session) -> List[Dict[str, Any]]:
@@ -303,7 +308,8 @@ class JiraService:
         db: Session,
         filter_id: Optional[str] = None,
         name: Optional[str] = None,
-        jql: Optional[str] = None
+        jql: Optional[str] = None,
+        filter_type: Optional[str] = "jira_filter"
     ) -> List[Dict[str, Any]]:
         config = JiraService.get_or_create_config(db)
         filters = list(config.configured_filters or [])
@@ -311,34 +317,45 @@ class JiraService:
         target_id = (filter_id or "").strip()
         target_name = (name or "").strip()
         target_jql = (jql or "").strip()
+        is_local = filter_type == "local" or target_id.startswith("tbl-")
 
-        # If user entered a numeric Jira filter ID, look up its name and JQL
-        if target_id and (target_id.isdigit() or (target_id.startswith("fav-") and target_id.replace("fav-", "").isdigit())):
-            clean_id = target_id.replace("fav-", "")
-            base_url, auth, headers = JiraService._get_connection_details(config)
-            if base_url:
-                try:
-                    async with httpx.AsyncClient(timeout=10.0, verify=JiraService._verify_tls(config)) as client:
-                        f_res = await client.get(f"{base_url}/rest/api/3/filter/{clean_id}", auth=auth, headers=headers)
-                        if f_res.status_code == 200:
-                            fdata = f_res.json()
-                            if not target_name:
-                                target_name = f"⭐ {fdata.get('name')}"
-                            if not target_jql:
-                                target_jql = fdata.get("jql", "")
-                except Exception as e:
-                    logger.warning(f"Could not fetch filter details: {e}")
+        if is_local:
+            if not target_id:
+                import uuid
+                target_id = f"tbl-{uuid.uuid4().hex[:8]}"
+            if not target_name:
+                target_name = "Nueva Tabla Local"
+            new_entry = {"id": target_id, "name": target_name, "jql": "", "type": "local"}
+        else:
+            # If user entered a numeric Jira filter ID, look up its name and JQL
+            if target_id and (target_id.isdigit() or (target_id.startswith("fav-") and target_id.replace("fav-", "").isdigit())):
+                clean_id = target_id.replace("fav-", "")
+                base_url, auth, headers = JiraService._get_connection_details(config)
+                if base_url:
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0, verify=JiraService._verify_tls(config)) as client:
+                            f_res = await client.get(f"{base_url}/rest/api/3/filter/{clean_id}", auth=auth, headers=headers)
+                            if f_res.status_code == 200:
+                                fdata = f_res.json()
+                                if not target_name:
+                                    target_name = f"⭐ {fdata.get('name')}"
+                                if not target_jql:
+                                    target_jql = fdata.get("jql", "")
+                    except Exception as e:
+                        logger.warning(f"Could not fetch filter details: {e}")
 
-        if not target_id:
-            import uuid
-            target_id = f"filter-{uuid.uuid4().hex[:8]}"
+            if not target_id:
+                import uuid
+                target_id = f"filter-{uuid.uuid4().hex[:8]}"
 
-        if not target_name:
-            target_name = f"Filtro #{target_id}"
+            if not target_name:
+                target_name = f"Filtro #{target_id}"
 
-        # If JQL is provided, normalize/validate bounded JQL
-        if not target_jql:
-            target_jql = "assignee = currentUser() ORDER BY updated DESC"
+            # If JQL is provided, normalize/validate bounded JQL
+            if not target_jql:
+                target_jql = "assignee = currentUser() ORDER BY updated DESC"
+
+            new_entry = {"id": target_id, "name": target_name, "jql": target_jql, "type": "jira_filter"}
 
         # If current filters only contain placeholder "all-projects" or "default-all", replace it
         if len(filters) == 1 and filters[0].get("id") in {"all-projects", "default-all"}:
@@ -346,7 +363,6 @@ class JiraService:
                 filters = []
 
         existing_idx = next((i for i, f in enumerate(filters) if f.get("id") == target_id), None)
-        new_entry = {"id": target_id, "name": target_name, "jql": target_jql}
         if existing_idx is not None:
             filters[existing_idx] = new_entry
         else:
@@ -356,7 +372,7 @@ class JiraService:
         if len(filters) == 1 or not config.selected_filter_id or config.selected_filter_id in {"all-projects", "default-all"}:
             config.selected_filter_id = target_id
             config.selected_filter_name = target_name
-            config.filter_jql = target_jql
+            config.filter_jql = new_entry.get("jql") or ""
 
         db.commit()
         return filters

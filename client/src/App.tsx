@@ -7,24 +7,30 @@ import { CreateViewModal } from './components/CreateViewModal';
 import { DataGrid } from './components/DataGrid';
 import { ManageFieldsModal } from './components/ManageFieldsModal';
 import { SettingsModal } from './components/SettingsModal';
+import { TableTabs } from './components/TableTabs';
 import { Toolbar } from './components/Toolbar';
-import { ViewTabs } from './components/ViewTabs';
+import { ViewsSidebar } from './components/ViewsSidebar';
 import {
+  addConfiguredFilter,
   apiFetch,
   bulkSetCustomValues,
   createColumn,
+  createIssue,
   createView,
   deleteColumn,
+  deleteIssue,
   deleteView,
   fetchColumns,
   fetchConfig,
   fetchFilters,
   fetchIssues,
   fetchViews,
+  removeConfiguredFilter,
   reorderColumns,
   setCustomValue,
   syncIssues,
   updateColumn,
+  updateLocalIssue,
   updateView,
 } from './services/api';
 import type { AppConfig, CustomColumn, FilterCondition, FilterConjunction, JiraFilter, JiraIssue, SavedView } from './types';
@@ -39,7 +45,7 @@ export function App() {
   });
   const t = getTranslation(lang);
 
-  const [issues, setIssues] = useState<JiraIssue[]>([]);
+  const [allIssues, setAllIssues] = useState<JiraIssue[]>([]);
   const [columns, setColumns] = useState<CustomColumn[]>([]);
   const [filters, setFilters] = useState<JiraFilter[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -47,10 +53,26 @@ export function App() {
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Views state
+  // Views & Sidebar state
   const [views, setViews] = useState<SavedView[]>([]);
   const [activeViewId, setActiveViewId] = useState<string>('view-all');
   const [isCreateViewOpen, setIsCreateViewOpen] = useState(false);
+  const [isViewsSidebarOpen, setIsViewsSidebarOpen] = useState<boolean>(true);
+
+  // Active table metadata & scoped issues
+  const activeTable = useMemo(
+    () => filters.find((f) => f.id === selectedFilterId),
+    [filters, selectedFilterId]
+  );
+  const isLocalTable = Boolean(activeTable?.type === 'local' || selectedFilterId?.startsWith('tbl-'));
+
+  const tableIssues = useMemo(() => {
+    if (!selectedFilterId) return allIssues;
+    if (selectedFilterId.startsWith('tbl-') || selectedFilterId.startsWith('local-')) {
+      return allIssues.filter((i) => i.table_id === selectedFilterId);
+    }
+    return allIssues.filter((i) => !i.table_id || i.table_id === selectedFilterId);
+  }, [allIssues, selectedFilterId]);
 
   // Active view layout configuration
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,7 +167,7 @@ export function App() {
       const result = await syncIssues(selectedFilterId);
       const updatedIssues = await fetchIssues();
       const updatedConfig = await fetchConfig();
-      setIssues(updatedIssues);
+      setAllIssues(updatedIssues);
       setConfig(updatedConfig);
       setBannerMessage(result.message);
       setTimeout(() => setBannerMessage(null), 4000);
@@ -233,7 +255,7 @@ export function App() {
       setConfig(fetchedConfig);
       setFilters(fetchedFilters);
       setColumns(fetchedColumns);
-      setIssues(fetchedIssues);
+      setAllIssues(fetchedIssues);
 
       const activeFilter = fetchedConfig.selected_filter_id || (fetchedFilters[0]?.id) || '';
       if (activeFilter) {
@@ -285,7 +307,7 @@ export function App() {
   }, [lang]);
 
   const handleUpdateCustomValue = async (issueKey: string, columnId: string, value: any) => {
-    setIssues((prev) =>
+    setAllIssues((prev) =>
       prev.map((item) => {
         if (item.key === issueKey) {
           return {
@@ -312,7 +334,7 @@ export function App() {
   ) => {
     if (updates.length === 0) return;
 
-    setIssues((prev) => {
+    setAllIssues((prev) => {
       const updateMap = new Map<string, Record<string, any>>();
       for (const u of updates) {
         if (!updateMap.has(u.issueKey)) {
@@ -346,6 +368,67 @@ export function App() {
       );
     } catch (err) {
       console.error(err);
+      loadAllData();
+    }
+  };
+
+  // Table Management & Local Issues CRUD
+  const handleCreateLocalTable = async (name: string) => {
+    try {
+      const updatedFilters = await addConfiguredFilter({ name, type: 'local' });
+      setFilters(updatedFilters);
+      const newTable = updatedFilters.find((f) => f.name === name);
+      if (newTable) {
+        handleSelectFilter(newTable.id);
+      }
+    } catch (err: any) {
+      alert(`Error al crear tabla local: ${err.message}`);
+    }
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    try {
+      const updatedFilters = await removeConfiguredFilter(tableId);
+      setFilters(updatedFilters);
+      if (selectedFilterId === tableId && updatedFilters.length > 0) {
+        handleSelectFilter(updatedFilters[0].id);
+      }
+    } catch (err: any) {
+      alert(`Error al eliminar tabla: ${err.message}`);
+    }
+  };
+
+  const handleCreateRow = async () => {
+    if (!selectedFilterId) return;
+    try {
+      const newIssue = await createIssue({
+        table_id: selectedFilterId,
+        summary: lang === 'es' ? 'Nuevo registro' : 'New record',
+      });
+      setAllIssues((prev) => [newIssue, ...prev]);
+    } catch (err: any) {
+      alert(`Error al crear fila: ${err.message}`);
+    }
+  };
+
+  const handleUpdateLocalIssue = async (key: string, data: Partial<JiraIssue>) => {
+    setAllIssues((prev) =>
+      prev.map((i) => (i.key === key ? { ...i, ...data } : i))
+    );
+    try {
+      await updateLocalIssue(key, data);
+    } catch (err: any) {
+      alert(`Error al actualizar fila: ${err.message}`);
+      loadAllData();
+    }
+  };
+
+  const handleDeleteIssue = async (key: string) => {
+    setAllIssues((prev) => prev.filter((i) => i.key !== key));
+    try {
+      await deleteIssue(key);
+    } catch (err: any) {
+      alert(`Error al eliminar fila: ${err.message}`);
       loadAllData();
     }
   };
@@ -531,7 +614,7 @@ export function App() {
 
   // Filtered and Sorted Issues
   const filteredAndSortedIssues = useMemo(() => {
-    let result = [...issues];
+    let result = [...tableIssues];
 
     // 1. Text Search Query
     if (searchQuery.trim()) {
@@ -569,7 +652,7 @@ export function App() {
     }
 
     return result;
-  }, [issues, searchQuery, filterConditions, filterConjunction, columns, sortField, sortDirection]);
+  }, [tableIssues, searchQuery, filterConditions, filterConjunction, columns, sortField, sortDirection]);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#f4f5f7] overflow-hidden text-gray-900">
@@ -615,7 +698,7 @@ export function App() {
           </div>
 
           <div className="text-xs bg-blue-50 text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 font-medium">
-            <strong>{issues.length}</strong> {t.tickets_loaded}
+            <strong>{tableIssues.length}</strong> {t.tickets_loaded}
           </div>
         </div>
       </header>
@@ -631,73 +714,100 @@ export function App() {
         </div>
       )}
 
-      {/* QuickGrid Views Bar */}
-      <ViewTabs
-        views={views}
-        activeViewId={activeViewId}
-        onSelectView={handleSelectView}
-        onOpenCreateView={() => setIsCreateViewOpen(true)}
-        onDeleteView={handleDeleteView}
+      {/* Tables / Projects Tabs across the top */}
+      <TableTabs
+        tables={filters}
+        activeTableId={selectedFilterId}
+        onSelectTable={handleSelectFilter}
+        onCreateLocalTable={handleCreateLocalTable}
+        onOpenJiraFilters={() => setIsSettingsOpen(true)}
+        onDeleteTable={handleDeleteTable}
         lang={lang}
       />
 
-      {/* QuickGrid Toolbar */}
-      <Toolbar
-        filters={filters}
-        selectedFilterId={selectedFilterId}
-        onSelectFilter={handleSelectFilter}
-        onSync={handleSync}
-        syncing={syncing}
-        lastSync={config?.last_sync}
-        columns={columns}
-        onToggleColumnVisibility={handleToggleColumnVisibility}
-        onOpenManageFields={() => setIsManageFieldsOpen(true)}
-        onOpenAddColumn={() => setIsAddColumnOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onExportPdf={handleExportPdf}
-        searchQuery={searchQuery}
-        onSearchChange={handleSearchChange}
-        groupBy={groupBy}
-        onGroupByChange={handleGroupByChange}
-        sortField={sortField}
-        sortDirection={sortDirection}
-        onSortChange={handleSortChange}
-        filterConditions={filterConditions}
-        onFilterConditionsChange={handleFilterConditionsChange}
-        filterConjunction={filterConjunction}
-        onFilterConjunctionChange={handleFilterConjunctionChange}
-        issues={issues}
-        matchingCount={filteredAndSortedIssues.length}
-        totalCount={issues.length}
-        lang={lang}
-      />
-
-      {/* Main Data Table Area */}
-      {loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center bg-white text-gray-400 gap-3">
-          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-medium">Cargando base de datos y tickets de Jira...</p>
-        </div>
-      ) : (
-        <DataGrid
-          issues={filteredAndSortedIssues}
-          columns={columns}
-          onUpdateCustomValue={handleUpdateCustomValue}
-          onUpdateCustomValuesBulk={handleUpdateCustomValuesBulk}
-          onOpenArchivyDrawer={(issue) => setActiveArchivyIssue(issue)}
-          onOpenAddColumn={() => setIsAddColumnOpen(true)}
-          onOpenEditColumn={(col) => {
-            setEditColumnOrigin('grid');
-            setEditingColumn(col);
-          }}
-          onDeleteColumn={handleDeleteColumn}
-          onUpdateColumnWidth={handleUpdateColumnWidth}
-          onReorderColumns={handleReorderColumns}
-          groupBy={groupBy}
-          jiraDomain={config?.jira_domain}
+      {/* Main Workspace Body: Views Sidebar on Left + Grid/Toolbar on Right */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Collapsible Left Views Sidebar */}
+        <ViewsSidebar
+          views={views}
+          activeViewId={activeViewId}
+          onSelectView={handleSelectView}
+          onOpenCreateView={() => setIsCreateViewOpen(true)}
+          onDeleteView={handleDeleteView}
+          isOpen={isViewsSidebarOpen}
+          onToggleOpen={() => setIsViewsSidebarOpen((prev) => !prev)}
           lang={lang}
         />
-      )}
+
+        {/* Right Content Area (Toolbar + DataGrid) */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* QuickGrid Toolbar */}
+          <Toolbar
+            filters={filters}
+            selectedFilterId={selectedFilterId}
+            onSelectFilter={handleSelectFilter}
+            onSync={handleSync}
+            syncing={syncing}
+            lastSync={config?.last_sync}
+            isLocalTable={isLocalTable}
+            onAddRow={handleCreateRow}
+            isViewsSidebarOpen={isViewsSidebarOpen}
+            onToggleViewsSidebar={() => setIsViewsSidebarOpen((prev) => !prev)}
+            columns={columns}
+            onToggleColumnVisibility={handleToggleColumnVisibility}
+            onOpenManageFields={() => setIsManageFieldsOpen(true)}
+            onOpenAddColumn={() => setIsAddColumnOpen(true)}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onExportPdf={handleExportPdf}
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
+            groupBy={groupBy}
+            onGroupByChange={handleGroupByChange}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSortChange={handleSortChange}
+            filterConditions={filterConditions}
+            onFilterConditionsChange={handleFilterConditionsChange}
+            filterConjunction={filterConjunction}
+            onFilterConjunctionChange={handleFilterConjunctionChange}
+            issues={tableIssues}
+            matchingCount={filteredAndSortedIssues.length}
+            totalCount={tableIssues.length}
+            lang={lang}
+          />
+
+          {/* Main Data Table Area */}
+          {loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center bg-white text-gray-400 gap-3">
+              <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-medium">Cargando base de datos y registros...</p>
+            </div>
+          ) : (
+            <DataGrid
+              issues={filteredAndSortedIssues}
+              columns={columns}
+              allIssues={allIssues}
+              tables={filters}
+              onUpdateCustomValue={handleUpdateCustomValue}
+              onUpdateCustomValuesBulk={handleUpdateCustomValuesBulk}
+              onUpdateLocalIssue={handleUpdateLocalIssue}
+              onDeleteIssue={handleDeleteIssue}
+              onOpenArchivyDrawer={(issue) => setActiveArchivyIssue(issue)}
+              onOpenAddColumn={() => setIsAddColumnOpen(true)}
+              onOpenEditColumn={(col) => {
+                setEditColumnOrigin('grid');
+                setEditingColumn(col);
+              }}
+              onDeleteColumn={handleDeleteColumn}
+              onUpdateColumnWidth={handleUpdateColumnWidth}
+              onReorderColumns={handleReorderColumns}
+              groupBy={groupBy}
+              jiraDomain={config?.jira_domain}
+              lang={lang}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Side Drawer for Archivy Notes */}
       <ArchivyDrawer
@@ -734,6 +844,8 @@ export function App() {
         onClose={() => setIsAddColumnOpen(false)}
         onAddColumn={handleAddColumn}
         existingColumns={columns}
+        tables={filters}
+        activeTableId={selectedFilterId}
         lang={lang}
       />
 

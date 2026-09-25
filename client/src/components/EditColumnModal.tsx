@@ -71,7 +71,10 @@ export const EditColumnModal: React.FC<Props> = ({
       await onUpdateColumn(column.id, {
         name: name.trim(),
         type,
-        options: type === 'single_select' || type === 'formula' ? options : [],
+        options:
+          type === 'single_select' || type === 'formula'
+            ? options
+            : column.options,
         formula: type === 'formula' ? formula.trim() : undefined,
       });
       onClose();
@@ -125,6 +128,8 @@ export const EditColumnModal: React.FC<Props> = ({
                 >
                   <option value="single_select">Selección Única (Color Pills)</option>
                   <option value="formula">Fórmula / Campo Calculado (fx)</option>
+                  <option value="link_row">🔗 Registros Vinculados (Link to Table)</option>
+                  <option value="lookup">🔍 Lookup (Consultar registro vinculado)</option>
                   <option value="text">Texto Corto</option>
                   <option value="long_text">Texto Largo / Notas (Multi-línea)</option>
                   <option value="number">Número</option>

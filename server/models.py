@@ -24,6 +24,7 @@ class JiraIssue(Base):
     __tablename__ = "jira_issues"
 
     key = Column(String(64), primary_key=True, index=True)
+    table_id = Column(String(128), nullable=True, index=True)
     jira_id = Column(String(64), nullable=True, index=True)
     summary = Column(Text, nullable=False, default="")
     jira_status = Column(String(128), nullable=False, default="Open")
@@ -46,9 +47,10 @@ class CustomColumn(Base):
     __tablename__ = "custom_columns"
 
     id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    table_id = Column(String(128), nullable=True, index=True)
     name = Column(String(128), nullable=False)
-    type = Column(String(64), nullable=False)  # single_select, text, long_text, date, number, archivy_link
-    options = Column(JSON, nullable=True, default=list)  # list of {id, label, color}
+    type = Column(String(64), nullable=False)  # single_select, text, long_text, date, number, archivy_link, formula, link_row, lookup
+    options = Column(JSON, nullable=True, default=list)  # list of {id, label, color} or dict with lookup/link settings
     position = Column(Integer, default=0)
     is_visible = Column(Boolean, default=True)
     width = Column(Integer, default=160)
@@ -122,8 +124,9 @@ class SelectOption(BaseModel):
 
 class CustomColumnCreate(BaseModel):
     name: str
-    type: str  # single_select, text, long_text, date, number, archivy_link, jira_field, formula
-    options: Optional[List[Dict[str, Any]]] = None
+    type: str  # single_select, text, long_text, date, number, archivy_link, jira_field, formula, link_row, lookup
+    table_id: Optional[str] = None
+    options: Optional[Any] = None
     position: Optional[int] = 0
     is_visible: Optional[bool] = True
     width: Optional[int] = 160
@@ -133,7 +136,8 @@ class CustomColumnCreate(BaseModel):
 class CustomColumnUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[str] = None
-    options: Optional[List[Dict[str, Any]]] = None
+    table_id: Optional[str] = None
+    options: Optional[Any] = None
     position: Optional[int] = None
     is_visible: Optional[bool] = None
     width: Optional[int] = None
@@ -144,7 +148,8 @@ class CustomColumnOut(BaseModel):
     id: str
     name: str
     type: str
-    options: Optional[List[Dict[str, Any]]] = []
+    table_id: Optional[str] = None
+    options: Optional[Any] = None
     position: int
     is_visible: bool
     width: int
@@ -165,8 +170,27 @@ class BulkSetCustomValueItem(BaseModel):
 class BulkSetCustomValuesRequest(BaseModel):
     items: List[BulkSetCustomValueItem]
 
+class IssueCreate(BaseModel):
+    summary: str
+    key: Optional[str] = None
+    table_id: Optional[str] = None
+    jira_status: Optional[str] = "To Do"
+    jira_status_category: Optional[str] = "To Do"
+    issue_type: Optional[str] = "Record"
+    priority: Optional[str] = "Medium"
+    assignee_name: Optional[str] = None
+
+class IssueUpdate(BaseModel):
+    summary: Optional[str] = None
+    jira_status: Optional[str] = None
+    jira_status_category: Optional[str] = None
+    issue_type: Optional[str] = None
+    priority: Optional[str] = None
+    assignee_name: Optional[str] = None
+
 class IssueOut(BaseModel):
     key: str
+    table_id: Optional[str] = None
     jira_id: Optional[str] = None
     summary: str
     jira_status: str
@@ -188,8 +212,9 @@ class IssueOut(BaseModel):
 class JiraFilterOut(BaseModel):
     id: str
     name: str
-    jql: str
+    jql: Optional[str] = ""
     description: Optional[str] = None
+    type: Optional[str] = "jira_filter"
 
 class ConfigOut(BaseModel):
     id: str

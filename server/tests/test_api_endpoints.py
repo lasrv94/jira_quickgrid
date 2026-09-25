@@ -293,4 +293,53 @@ async def test_jira_pagination_multiple_pages(monkeypatch):
     assert len(requests_made) == 2
 
 
+def test_local_tables_and_issues_crud():
+    # 1. Create a local table via configured-filters
+    create_tbl_res = client.post("/api/jira/configured-filters", json={
+        "name": "Clientes VIP",
+        "type": "local"
+    })
+    assert create_tbl_res.status_code == 200
+    filters = create_tbl_res.json()
+    local_tbl = next((f for f in filters if f["name"] == "Clientes VIP"), None)
+    assert local_tbl is not None
+    assert local_tbl["type"] == "local"
+    tbl_id = local_tbl["id"]
+
+    # 2. Create a local record in that table
+    new_record_res = client.post("/api/issues", json={
+        "summary": "Acme Corp International",
+        "table_id": tbl_id,
+        "jira_status": "Active",
+        "priority": "High"
+    })
+    assert new_record_res.status_code == 200
+    record = new_record_res.json()
+    rec_key = record["key"]
+    assert record["table_id"] == tbl_id
+    assert record["summary"] == "Acme Corp International"
+
+    # 3. Filter issues by table_id
+    filtered_issues_res = client.get(f"/api/issues?table_id={tbl_id}")
+    assert filtered_issues_res.status_code == 200
+    issues_in_tbl = filtered_issues_res.json()
+    assert any(i["key"] == rec_key for i in issues_in_tbl)
+
+    # 4. Update the local record
+    patch_res = client.patch(f"/api/issues/{rec_key}", json={
+        "summary": "Acme Corp Global",
+        "jira_status": "Partner"
+    })
+    assert patch_res.status_code == 200
+    assert patch_res.json()["summary"] == "Acme Corp Global"
+
+    # 5. Delete the local record
+    del_rec_res = client.delete(f"/api/issues/{rec_key}")
+    assert del_rec_res.status_code == 200
+
+    # 6. Cleanup local table
+    client.delete(f"/api/jira/configured-filters/{tbl_id}")
+
+
+
 

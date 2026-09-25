@@ -6,7 +6,9 @@ export type ColumnType =
   | 'number'
   | 'archivy_link'
   | 'jira_field'
-  | 'formula';
+  | 'formula'
+  | 'link_row'
+  | 'lookup';
 
 export interface SelectOption {
   id: string;
@@ -14,8 +16,20 @@ export interface SelectOption {
   color: string;
 }
 
+export interface LinkRowOptions {
+  target_table_id: string;
+  target_table_name?: string;
+  allow_multiple?: boolean;
+}
+
+export interface LookupOptions {
+  link_column_id: string;
+  lookup_field_id: string;
+}
+
 export interface CustomColumn {
   id: string;
+  table_id?: string;
   name: string;
   type: ColumnType;
   options?: SelectOption[];
@@ -24,6 +38,8 @@ export interface CustomColumn {
   width: number;
   jira_field_key?: string;
   formula?: string;
+  link_row?: LinkRowOptions;
+  lookup?: LookupOptions;
 }
 
 export interface JiraFieldInfo {
@@ -36,6 +52,7 @@ export interface JiraFieldInfo {
 
 export interface JiraIssue {
   key: string;
+  table_id?: string;
   jira_id?: string;
   summary: string;
   jira_status: string;
@@ -56,8 +73,9 @@ export interface JiraIssue {
 export interface JiraFilter {
   id: string;
   name: string;
-  jql: string;
+  jql?: string;
   description?: string;
+  type?: 'jira_filter' | 'local';
 }
 
 export interface AppConfig {

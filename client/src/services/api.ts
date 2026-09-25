@@ -10,10 +10,47 @@ export function apiFetch(input: string, init: RequestInit = {}): Promise<Respons
 
 const fetch = apiFetch;
 
-export async function fetchIssues(): Promise<JiraIssue[]> {
-  const res = await fetch(`${API_BASE}/issues`);
+export async function fetchIssues(tableId?: string): Promise<JiraIssue[]> {
+  const url = tableId ? `${API_BASE}/issues?table_id=${encodeURIComponent(tableId)}` : `${API_BASE}/issues`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Error al obtener tickets');
   return res.json();
+}
+
+export async function createIssue(data: Partial<JiraIssue>): Promise<JiraIssue> {
+  const res = await fetch(`${API_BASE}/issues`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Error al crear fila');
+  }
+  return res.json();
+}
+
+export async function updateLocalIssue(key: string, data: Partial<JiraIssue>): Promise<JiraIssue> {
+  const res = await fetch(`${API_BASE}/issues/${encodeURIComponent(key)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Error al actualizar fila');
+  }
+  return res.json();
+}
+
+export async function deleteIssue(key: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/issues/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Error al eliminar fila');
+  }
 }
 
 export async function syncIssues(filterId?: string): Promise<{ synced: number; total: number; message: string }> {
@@ -183,7 +220,7 @@ export async function fetchAvailableJiraFilters(): Promise<JiraFilter[]> {
   return res.json();
 }
 
-export async function addConfiguredFilter(data: { id?: string; name?: string; jql?: string }): Promise<JiraFilter[]> {
+export async function addConfiguredFilter(data: { id?: string; name?: string; jql?: string; type?: 'jira_filter' | 'local' }): Promise<JiraFilter[]> {
   const res = await fetch(`${API_BASE}/jira/configured-filters`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
