@@ -42,6 +42,14 @@ try:
         if "filter_rules" not in view_cols and len(view_cols) > 0:
             conn.exec_driver_sql("ALTER TABLE saved_views ADD COLUMN filter_rules JSON")
             conn.commit()
+
+        # Update default filter JQL to assigned to me if old generic placeholder exists
+        conn.exec_driver_sql(
+            "UPDATE saved_configs SET filter_jql = 'assignee = currentUser() ORDER BY updated DESC', "
+            "selected_filter_name = '👤 Asignados a mí' "
+            "WHERE filter_jql LIKE '%project is not EMPTY%'"
+        )
+        conn.commit()
 except Exception as e:
     logger.warning(f"Database migration note: {e}")
 

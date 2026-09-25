@@ -169,19 +169,20 @@ class JiraService:
     def _make_bounded_jql(jql: Optional[str]) -> str:
         """
         Ensures JQL query satisfies Jira Cloud's requirement for bounded queries (CHANGE-2046).
+        Default query is always issues assigned to current user.
         """
         if not jql or not jql.strip():
-            return "project is not EMPTY ORDER BY created DESC"
+            return "assignee = currentUser() ORDER BY updated DESC"
         
         trimmed = jql.strip()
         lower = trimmed.lower()
         if lower.startswith("order by"):
-            return f"project is not EMPTY {trimmed}"
+            return f"assignee = currentUser() {trimmed}"
         
         # Check if query has project, created, updated, or assignee
         has_bound = any(k in lower for k in ["project", "created", "updated", "assignee", "reporter", "issuetype", "id", "key"])
         if not has_bound:
-            return f"project is not EMPTY AND ({trimmed})"
+            return f"assignee = currentUser() AND ({trimmed})"
         
         return trimmed
 
@@ -225,9 +226,9 @@ class JiraService:
             return mock_default
 
         default_one = [{
-            "id": "default-all",
-            "name": "✨ Todos los tickets",
-            "jql": "project is not EMPTY ORDER BY created DESC"
+            "id": "my-assigned",
+            "name": "👤 Asignados a mí",
+            "jql": "assignee = currentUser() ORDER BY updated DESC"
         }]
         config.configured_filters = default_one
         db.commit()
@@ -337,7 +338,7 @@ class JiraService:
 
         # If JQL is provided, normalize/validate bounded JQL
         if not target_jql:
-            target_jql = "project is not EMPTY ORDER BY created DESC"
+            target_jql = "assignee = currentUser() ORDER BY updated DESC"
 
         # If current filters only contain placeholder "all-projects" or "default-all", replace it
         if len(filters) == 1 and filters[0].get("id") in {"all-projects", "default-all"}:

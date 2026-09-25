@@ -25,7 +25,6 @@ import {
   fetchFilters,
   fetchJiraFields,
   removeConfiguredFilter,
-  syncIssues,
   updateConfig,
   validateJiraFilter,
 } from '../services/api';
@@ -316,11 +315,6 @@ export const SettingsModal: React.FC<Props> = ({
         selected_filter_id: filterId || undefined,
         filter_jql: filterJql || undefined,
       });
-      try {
-        await syncIssues(filterId || undefined);
-      } catch (syncErr) {
-        console.warn('Auto-sync after settings save:', syncErr);
-      }
       await onRefreshConfig();
       setStatusMsg(lang === 'es' ? 'Configuración guardada exitosamente.' : 'Settings saved successfully.');
       setTimeout(() => {
@@ -781,7 +775,7 @@ export const SettingsModal: React.FC<Props> = ({
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="project = KAN AND status != Done ORDER BY created DESC"
+                    placeholder="assignee = currentUser() ORDER BY updated DESC"
                     value={newFilterJql}
                     onChange={(e) => setNewFilterJql(e.target.value)}
                     className="w-full px-3 py-1.5 text-xs rounded border border-gray-300 bg-white font-mono focus:ring-1 focus:ring-blue-500 resize-none"
@@ -794,12 +788,12 @@ export const SettingsModal: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setNewFilterName('Todos los tickets');
-                      setNewFilterJql('project is not EMPTY ORDER BY created DESC');
+                      setNewFilterName('Mis tickets');
+                      setNewFilterJql('assignee = currentUser() ORDER BY updated DESC');
                     }}
-                    className="px-2 py-0.5 text-[10px] bg-white hover:bg-gray-100 text-gray-700 rounded border border-gray-200"
+                    className="px-2 py-0.5 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-800 font-semibold rounded border border-blue-200"
                   >
-                    📁 Todos
+                    👤 Asignados a mí (Default)
                   </button>
                   <button
                     type="button"
@@ -814,12 +808,12 @@ export const SettingsModal: React.FC<Props> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setNewFilterName('Mis tickets');
-                      setNewFilterJql('assignee = currentUser() ORDER BY updated DESC');
+                      setNewFilterName('Sprint activo');
+                      setNewFilterJql('sprint in openSprints() ORDER BY priority DESC');
                     }}
                     className="px-2 py-0.5 text-[10px] bg-white hover:bg-gray-100 text-gray-700 rounded border border-gray-200"
                   >
-                    👤 Asignados a mí
+                    🚀 Sprint activo
                   </button>
                 </div>
 

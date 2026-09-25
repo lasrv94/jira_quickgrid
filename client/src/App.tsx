@@ -43,7 +43,7 @@ export function App() {
   const [columns, setColumns] = useState<CustomColumn[]>([]);
   const [filters, setFilters] = useState<JiraFilter[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [selectedFilterId, setSelectedFilterId] = useState<string>('fav-1');
+  const [selectedFilterId, setSelectedFilterId] = useState<string>('');
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -156,10 +156,9 @@ export function App() {
     }
   };
 
-  const handleSelectFilter = async (filterId: string, _saveToView: boolean = true) => {
+  const handleSelectFilter = async (filterId: string) => {
     flushPendingSave();
     setSelectedFilterId(filterId);
-    setSyncing(true);
     try {
       // 1. Fetch views scoped to this project / filter
       const projectViews = await fetchViews(filterId).catch(() => []);
@@ -170,17 +169,8 @@ export function App() {
           applyView(initialView);
         }
       }
-
-      // 2. Synchronize issues for this project
-      await syncIssues(filterId);
-      const updatedIssues = await fetchIssues();
-      const updatedConfig = await fetchConfig();
-      setIssues(updatedIssues);
-      setConfig(updatedConfig);
     } catch (err) {
       console.error(err);
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -197,10 +187,6 @@ export function App() {
     } else {
       setFilterConditions([]);
       setFilterConjunction('and');
-    }
-
-    if (view.filter_id && view.filter_id !== selectedFilterId) {
-      handleSelectFilter(view.filter_id, false);
     }
 
     // Apply column visibility and column order

@@ -55,11 +55,13 @@ async def sync_jira_issues(filter_id: Optional[str] = None, db: Session = Depend
 
 @router.get("/issues", response_model=List[IssueOut])
 def list_issues(include_archived: bool = Query(False), db: Session = Depends(get_db)):
-    # Auto-seed mock issues if database is empty so app works immediately
-    count = db.query(JiraIssue).count()
-    if count == 0:
-        import asyncio
-        asyncio.run(JiraService.sync_issues_from_jira(db))
+    # Auto-seed mock issues ONLY in mock mode if database is empty
+    config = JiraService.get_or_create_config(db)
+    if config.jira_auth_type == "mock":
+        count = db.query(JiraIssue).count()
+        if count == 0:
+            import asyncio
+            asyncio.run(JiraService.sync_issues_from_jira(db))
 
     query = db.query(JiraIssue)
     if not include_archived:
