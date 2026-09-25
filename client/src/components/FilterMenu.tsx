@@ -41,7 +41,7 @@ export const FilterMenu: React.FC<Props> = ({
   const t = getTranslation(lang);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape or click outside
+  // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
 
@@ -49,18 +49,9 @@ export const FilterMenu: React.FC<Props> = ({
       if (e.key === 'Escape') onClose();
     };
 
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
     document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('mousedown', handleClickOutside);
-
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isOpen, onClose]);
 

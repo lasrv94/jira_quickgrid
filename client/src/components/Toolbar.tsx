@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ArrowDownUp,
   Check,
@@ -79,10 +79,43 @@ export const Toolbar: React.FC<Props> = ({
   lang,
 }) => {
   const t = getTranslation(lang);
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
-  const [showGroupMenu, setShowGroupMenu] = useState(false);
-  const [showSortMenu, setShowSortMenu] = useState(false);
+  type ActiveMenu = 'filter' | 'sort' | 'group' | 'columns' | null;
+  const [activeMenu, setActiveMenu] = useState<ActiveMenu>(null);
+
+  const filterRef = useRef<HTMLDivElement>(null);
+  const sortRef = useRef<HTMLDivElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
+  const columnsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!activeMenu) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveMenu(null);
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (activeMenu === 'filter' && filterRef.current && !filterRef.current.contains(target)) {
+        setActiveMenu(null);
+      } else if (activeMenu === 'sort' && sortRef.current && !sortRef.current.contains(target)) {
+        setActiveMenu(null);
+      } else if (activeMenu === 'group' && groupRef.current && !groupRef.current.contains(target)) {
+        setActiveMenu(null);
+      } else if (activeMenu === 'columns' && columnsRef.current && !columnsRef.current.contains(target)) {
+        setActiveMenu(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [activeMenu]);
 
   const formatLastSync = (iso?: string) => {
     if (!iso) return lang === 'es' ? 'No sincronizado' : 'Not synced';
@@ -171,10 +204,10 @@ export const Toolbar: React.FC<Props> = ({
         </div>
 
         {/* Smart Multi-field Filter Button */}
-        <div className="relative">
+        <div ref={filterRef} className="relative">
           <button
             type="button"
-            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            onClick={() => setActiveMenu((prev) => (prev === 'filter' ? null : 'filter'))}
             title={lang === 'es' ? 'Filtrar por uno o varios campos' : 'Filter by one or multiple fields'}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
               filterConditions.length > 0
@@ -192,8 +225,8 @@ export const Toolbar: React.FC<Props> = ({
           </button>
 
           <FilterMenu
-            isOpen={showFilterMenu}
-            onClose={() => setShowFilterMenu(false)}
+            isOpen={activeMenu === 'filter'}
+            onClose={() => setActiveMenu(null)}
             conditions={filterConditions}
             onChangeConditions={onFilterConditionsChange}
             conjunction={filterConjunction}
@@ -207,9 +240,10 @@ export const Toolbar: React.FC<Props> = ({
         </div>
 
         {/* Sort Menu */}
-        <div className="relative">
+        <div ref={sortRef} className="relative">
           <button
-            onClick={() => setShowSortMenu(!showSortMenu)}
+            type="button"
+            onClick={() => setActiveMenu((prev) => (prev === 'sort' ? null : 'sort'))}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               sortField ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
             }`}
@@ -223,15 +257,16 @@ export const Toolbar: React.FC<Props> = ({
             )}
           </button>
 
-          {showSortMenu && (
+          {activeMenu === 'sort' && (
             <div className="absolute right-0 mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 {t.sort_by}
               </div>
               <button
+                type="button"
                 onClick={() => {
                   onSortChange(null, 'asc');
-                  setShowSortMenu(false);
+                  setActiveMenu(null);
                 }}
                 className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 ${
                   !sortField ? 'font-semibold text-blue-600' : 'text-gray-700'
@@ -241,9 +276,10 @@ export const Toolbar: React.FC<Props> = ({
                 {!sortField && <Check className="w-3.5 h-3.5" />}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   onSortChange('priority', sortDirection === 'asc' ? 'desc' : 'asc');
-                  setShowSortMenu(false);
+                  setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
@@ -251,9 +287,10 @@ export const Toolbar: React.FC<Props> = ({
                 {sortField === 'priority' && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   onSortChange('jira_status', sortDirection === 'asc' ? 'desc' : 'asc');
-                  setShowSortMenu(false);
+                  setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
@@ -261,9 +298,10 @@ export const Toolbar: React.FC<Props> = ({
                 {sortField === 'jira_status' && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   onSortChange('key', sortDirection === 'asc' ? 'desc' : 'asc');
-                  setShowSortMenu(false);
+                  setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
@@ -275,9 +313,10 @@ export const Toolbar: React.FC<Props> = ({
         </div>
 
         {/* Group By Menu */}
-        <div className="relative">
+        <div ref={groupRef} className="relative">
           <button
-            onClick={() => setShowGroupMenu(!showGroupMenu)}
+            type="button"
+            onClick={() => setActiveMenu((prev) => (prev === 'group' ? null : 'group'))}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               groupBy ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
             }`}
@@ -287,15 +326,16 @@ export const Toolbar: React.FC<Props> = ({
             {groupBy && <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />}
           </button>
 
-          {showGroupMenu && (
+          {activeMenu === 'group' && (
             <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 animate-in fade-in zoom-in-95">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 {t.group_by_label}
               </div>
               <button
+                type="button"
                 onClick={() => {
                   onGroupByChange(null);
-                  setShowGroupMenu(false);
+                  setActiveMenu(null);
                 }}
                 className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 ${
                   !groupBy ? 'font-semibold text-purple-600' : 'text-gray-700'
@@ -305,9 +345,10 @@ export const Toolbar: React.FC<Props> = ({
                 {!groupBy && <Check className="w-3.5 h-3.5" />}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   onGroupByChange('jira_status');
-                  setShowGroupMenu(false);
+                  setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
@@ -315,9 +356,10 @@ export const Toolbar: React.FC<Props> = ({
                 {groupBy === 'jira_status' && <Check className="w-3.5 h-3.5 text-purple-600" />}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   onGroupByChange('priority');
-                  setShowGroupMenu(false);
+                  setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
@@ -325,9 +367,10 @@ export const Toolbar: React.FC<Props> = ({
                 {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-purple-600" />}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   onGroupByChange('assignee_name');
-                  setShowGroupMenu(false);
+                  setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
@@ -341,9 +384,10 @@ export const Toolbar: React.FC<Props> = ({
                 .map((c) => (
                   <button
                     key={c.id}
+                    type="button"
                     onClick={() => {
                       onGroupByChange(c.id);
-                      setShowGroupMenu(false);
+                      setActiveMenu(null);
                     }}
                     className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
                   >
@@ -356,16 +400,17 @@ export const Toolbar: React.FC<Props> = ({
         </div>
 
         {/* Column Visibility Menu */}
-        <div className="relative">
+        <div ref={columnsRef} className="relative">
           <button
-            onClick={() => setShowColumnsMenu(!showColumnsMenu)}
+            type="button"
+            onClick={() => setActiveMenu((prev) => (prev === 'columns' ? null : 'columns'))}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
           >
             <Columns className="w-3.5 h-3.5" />
             <span>{t.columns_btn}</span>
           </button>
 
-          {showColumnsMenu && (
+          {activeMenu === 'columns' && (
             <div className="absolute right-0 mt-1 w-60 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40 max-h-72 overflow-y-auto animate-in fade-in zoom-in-95">
               <div className="px-3 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 {t.columns_visibility}
