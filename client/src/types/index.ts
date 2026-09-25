@@ -107,7 +107,14 @@ export type FilterOperator =
   | 'lte'
   | 'is_before'
   | 'is_after'
-  | 'is_today';
+  | 'is_on_or_before'
+  | 'is_on_or_after'
+  | 'is_today'
+  | 'is_yesterday'
+  | 'in_last_7_days'
+  | 'in_last_30_days'
+  | 'in_this_month'
+  | 'in_this_year';
 
 export interface FilterCondition {
   id: string;

@@ -165,7 +165,14 @@ export const translations = {
     op_lte: 'es menor o igual (≤)',
     op_is_before: 'es antes de',
     op_is_after: 'es después de',
+    op_is_on_or_before: 'es el día o antes (≤)',
+    op_is_on_or_after: 'es el día o después (≥)',
     op_is_today: 'es hoy',
+    op_is_yesterday: 'es ayer',
+    op_in_last_7_days: 'en los últimos 7 días',
+    op_in_last_30_days: 'en los últimos 30 días',
+    op_in_this_month: 'en este mes',
+    op_in_this_year: 'en este año',
 
     // Formula Fields
     col_formula: 'Fórmula (fx)',
@@ -347,7 +354,14 @@ export const translations = {
     op_lte: 'is less or equal (≤)',
     op_is_before: 'is before',
     op_is_after: 'is after',
+    op_is_on_or_before: 'is on or before (≤)',
+    op_is_on_or_after: 'is on or after (≥)',
     op_is_today: 'is today',
+    op_is_yesterday: 'is yesterday',
+    op_in_last_7_days: 'in the last 7 days',
+    op_in_last_30_days: 'in the last 30 days',
+    op_in_this_month: 'in this month',
+    op_in_this_year: 'in this year',
 
     // Formula Fields
     col_formula: 'Formula (fx)',

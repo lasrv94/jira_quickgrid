@@ -164,8 +164,22 @@ export const FilterMenu: React.FC<Props> = ({
         return t.op_is_before;
       case 'is_after':
         return t.op_is_after;
+      case 'is_on_or_before':
+        return t.op_is_on_or_before;
+      case 'is_on_or_after':
+        return t.op_is_on_or_after;
       case 'is_today':
         return t.op_is_today;
+      case 'is_yesterday':
+        return t.op_is_yesterday;
+      case 'in_last_7_days':
+        return t.op_in_last_7_days;
+      case 'in_last_30_days':
+        return t.op_in_last_30_days;
+      case 'in_this_month':
+        return t.op_in_this_month;
+      case 'in_this_year':
+        return t.op_in_this_year;
       default:
         return op;
     }
@@ -254,7 +268,12 @@ export const FilterMenu: React.FC<Props> = ({
             const isNoValueOperator =
               condition.operator === 'is_empty' ||
               condition.operator === 'is_not_empty' ||
-              condition.operator === 'is_today';
+              condition.operator === 'is_today' ||
+              condition.operator === 'is_yesterday' ||
+              condition.operator === 'in_last_7_days' ||
+              condition.operator === 'in_last_30_days' ||
+              condition.operator === 'in_this_month' ||
+              condition.operator === 'in_this_year';
             const isMultiItemOperator =
               condition.operator === 'has_any_of' ||
               condition.operator === 'has_all_of' ||
@@ -326,8 +345,29 @@ export const FilterMenu: React.FC<Props> = ({
                 {/* Value Input Area */}
                 <div className="flex-1 min-w-0 pt-0.5">
                   {isNoValueOperator ? (
-                    <div className="text-[11px] text-gray-400 italic px-2 py-1.5 bg-gray-100/60 rounded-lg border border-gray-200/50">
-                      {lang === 'es' ? 'Condición sin valor' : 'No value needed'}
+                    <div className="text-[11px] text-gray-500 font-medium px-2.5 py-1.5 bg-gray-100/80 rounded-lg border border-gray-200/70 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span>{lang === 'es' ? 'Condición relativa (automática)' : 'Automatic relative condition'}</span>
+                    </div>
+                  ) : fieldCategory === 'date' ? (
+                    <div className="flex items-center gap-1.5 w-full">
+                      <input
+                        type="date"
+                        value={condition.value}
+                        onChange={(e) => handleUpdateCondition(condition.id, { value: e.target.value })}
+                        className="w-full text-xs font-medium text-gray-800 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const todayStr = new Date().toISOString().split('T')[0];
+                          handleUpdateCondition(condition.id, { value: todayStr });
+                        }}
+                        className="px-2 py-1 text-[11px] font-semibold text-gray-600 hover:text-blue-600 bg-gray-100 hover:bg-blue-50 border border-gray-200 rounded-lg shrink-0 transition-colors cursor-pointer"
+                        title={lang === 'es' ? 'Seleccionar fecha de hoy' : 'Select today'}
+                      >
+                        {lang === 'es' ? 'Hoy' : 'Today'}
+                      </button>
                     </div>
                   ) : isMultiItemOperator ? (
                     /* Multi-Item Tag / Pill Picker */
@@ -400,13 +440,6 @@ export const FilterMenu: React.FC<Props> = ({
                         </option>
                       ))}
                     </select>
-                  ) : fieldCategory === 'date' ? (
-                    <input
-                      type="date"
-                      value={condition.value}
-                      onChange={(e) => handleUpdateCondition(condition.id, { value: e.target.value })}
-                      className="w-full text-xs text-gray-800 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
                   ) : fieldCategory === 'number' ? (
                     <input
                       type="number"

@@ -112,18 +112,43 @@ export function isMultiValueField(fieldId: string, columns: CustomColumn[], issu
   return false;
 }
 
+export function parseDateValue(val: any): Date | null {
+  if (val === null || val === undefined || val === '') return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  const s = String(val).trim();
+  if (!s) return null;
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // YYYY-MM-DD or YYYY/MM/DD
+  const ymdMatch = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10) - 1;
+    const day = parseInt(ymdMatch[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const timestamp = Date.parse(s);
+  if (!isNaN(timestamp)) {
+    return new Date(timestamp);
+  }
+
+  return null;
+}
+
 export function getAllFilterableFields(columns: CustomColumn[], issues: JiraIssue[] = []): FieldDefinition[] {
   const custom: FieldDefinition[] = columns.map((col) => {
-    let type: FieldCategory = 'text';
-    if (col.type === 'single_select') {
-      type = 'select';
-    } else if (col.type === 'number') {
-      type = 'number';
-    } else if (col.type === 'date') {
-      type = 'date';
-    } else if (isMultiValueField(col.id, columns, issues)) {
-      type = 'multiselect';
-    }
+    const type = getFieldCategory(col.id, columns, issues);
     return {
       id: col.id,
       name: col.name,
@@ -143,7 +168,24 @@ export function getFieldCategory(fieldId: string, columns: CustomColumn[], issue
     if (col.type === 'single_select') return 'select';
     if (col.type === 'number') return 'number';
     if (col.type === 'date') return 'date';
+    if (col.jira_field_key) {
+      const k = col.jira_field_key.toLowerCase();
+      if (k === 'duedate' || k === 'created' || k === 'updated' || k === 'resolutiondate' || k.includes('date')) {
+        return 'date';
+      }
+    }
     if (isMultiValueField(fieldId, columns, issues)) return 'multiselect';
+  }
+
+  const lowerField = fieldId.toLowerCase();
+  if (
+    lowerField === 'duedate' ||
+    lowerField === 'created' ||
+    lowerField === 'updated' ||
+    lowerField === 'resolutiondate' ||
+    lowerField.includes('date')
+  ) {
+    return 'date';
   }
 
   if (isMultiValueField(fieldId, columns, issues)) return 'multiselect';
@@ -175,7 +217,22 @@ export function getAvailableOperators(category: FieldCategory): FilterOperator[]
     case 'number':
       return ['equals', 'not_equals', 'gt', 'gte', 'lt', 'lte', 'is_empty', 'is_not_empty'];
     case 'date':
-      return ['equals', 'is_before', 'is_after', 'is_today', 'is_empty', 'is_not_empty'];
+      return [
+        'equals',
+        'not_equals',
+        'is_before',
+        'is_after',
+        'is_on_or_before',
+        'is_on_or_after',
+        'is_today',
+        'is_yesterday',
+        'in_last_7_days',
+        'in_last_30_days',
+        'in_this_month',
+        'in_this_year',
+        'is_empty',
+        'is_not_empty',
+      ];
     case 'text':
     default:
       return [
@@ -198,6 +255,12 @@ export function getFieldSelectOptions(
   columns: CustomColumn[],
   issues: JiraIssue[]
 ): { id: string; label: string; color?: string }[] {
+  // If the field is a date or number category, NEVER discover and return discrete text options!
+  const category = getFieldCategory(fieldId, columns, issues);
+  if (category === 'date' || category === 'number') {
+    return [];
+  }
+
   // Builtin Priority
   if (fieldId === 'priority') {
     return [
@@ -388,33 +451,67 @@ export function evaluateCondition(
   }
 
   // Date comparison
-  if (colType === 'date' || fieldId === 'jira_created_at' || fieldId === 'jira_updated_at') {
-    const dVal = new Date(rawValue);
-    if (isNaN(dVal.getTime())) return false;
+  const fieldCat = getFieldCategory(fieldId, columns, [issue]);
+  if (fieldCat === 'date' || colType === 'date' || fieldId === 'jira_created_at' || fieldId === 'jira_updated_at') {
+    const dVal = parseDateValue(rawValue);
+    if (!dVal) return false;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     if (operator === 'is_today') {
-      const today = new Date();
-      return (
-        dVal.getFullYear() === today.getFullYear() &&
-        dVal.getMonth() === today.getMonth() &&
-        dVal.getDate() === today.getDate()
-      );
+      return dVal >= todayStart && dVal <= todayEnd;
+    }
+
+    if (operator === 'is_yesterday') {
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const yesterdayEnd = new Date(todayEnd);
+      yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+      return dVal >= yesterdayStart && dVal <= yesterdayEnd;
+    }
+
+    if (operator === 'in_last_7_days') {
+      const sevenDaysAgo = new Date(todayStart);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      return dVal >= sevenDaysAgo && dVal <= todayEnd;
+    }
+
+    if (operator === 'in_last_30_days') {
+      const thirtyDaysAgo = new Date(todayStart);
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return dVal >= thirtyDaysAgo && dVal <= todayEnd;
+    }
+
+    if (operator === 'in_this_month') {
+      return dVal.getFullYear() === now.getFullYear() && dVal.getMonth() === now.getMonth();
+    }
+
+    if (operator === 'in_this_year') {
+      return dVal.getFullYear() === now.getFullYear();
     }
 
     if (!target) return true;
-    const dTarget = new Date(target);
-    if (isNaN(dTarget.getTime())) return false;
+    const dTarget = parseDateValue(target);
+    if (!dTarget) return false;
 
-    const dValDateStr = dVal.toISOString().slice(0, 10);
-    const dTargetDateStr = dTarget.toISOString().slice(0, 10);
+    const targetStart = new Date(dTarget.getFullYear(), dTarget.getMonth(), dTarget.getDate(), 0, 0, 0, 0);
+    const targetEnd = new Date(dTarget.getFullYear(), dTarget.getMonth(), dTarget.getDate(), 23, 59, 59, 999);
 
     switch (operator) {
       case 'equals':
-        return dValDateStr === dTargetDateStr;
+        return dVal >= targetStart && dVal <= targetEnd;
+      case 'not_equals':
+        return dVal < targetStart || dVal > targetEnd;
       case 'is_before':
-        return dVal.getTime() < dTarget.getTime();
+        return dVal < targetStart;
       case 'is_after':
-        return dVal.getTime() > dTarget.getTime();
+        return dVal > targetEnd;
+      case 'is_on_or_before':
+        return dVal <= targetEnd;
+      case 'is_on_or_after':
+        return dVal >= targetStart;
     }
   }
 
