@@ -22,6 +22,7 @@ interface Props {
   issues: JiraIssue[];
   matchingCount: number;
   totalCount: number;
+  isLocalTable?: boolean;
   lang: Language;
 }
 
@@ -36,6 +37,7 @@ export const FilterMenu: React.FC<Props> = ({
   issues,
   matchingCount,
   totalCount,
+  isLocalTable = false,
   lang,
 }) => {
   const t = getTranslation(lang);
@@ -57,7 +59,7 @@ export const FilterMenu: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  const allFields = getAllFilterableFields(columns, issues);
+  const allFields = getAllFilterableFields(columns, issues, isLocalTable);
   const builtinFields = allFields.filter((f) => !f.isCustom);
   const customFields = allFields.filter((f) => f.isCustom);
 

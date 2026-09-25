@@ -14,6 +14,7 @@ import {
   Lock,
   Plus,
   Trash2,
+  Type,
   X,
 } from 'lucide-react';
 import type { CustomColumn, JiraIssue } from '../types';
@@ -472,6 +473,7 @@ interface Props {
   onReorderColumns?: (reorderedCols: CustomColumn[]) => Promise<void>;
   groupBy: string | null;
   jiraDomain?: string;
+  isLocalTable?: boolean;
   lang?: Language;
 }
 
@@ -492,6 +494,7 @@ export const DataGrid: React.FC<Props> = ({
   onReorderColumns,
   groupBy,
   jiraDomain,
+  isLocalTable = false,
   lang = 'es',
 }) => {
   const t = getTranslation(lang);
@@ -601,15 +604,21 @@ export const DataGrid: React.FC<Props> = ({
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  const visibleCustomColumns = useMemo(
-    () => columns.filter((c) => c.is_visible).sort((a, b) => a.position - b.position),
-    [columns]
-  );
+  const visibleCustomColumns = useMemo(() => {
+    let filtered = columns.filter((c) => c.is_visible);
+    if (isLocalTable) {
+      filtered = filtered.filter((c) => c.type !== 'jira_field' && !c.jira_field_key);
+    }
+    return filtered.sort((a, b) => a.position - b.position);
+  }, [columns, isLocalTable]);
 
   // Grouping logic
   const groupedData = useMemo(() => {
     if (!groupBy) {
-      return [{ groupKey: 'all', groupLabel: 'Todos los tickets', items: issues }];
+      const defaultGroupLabel = isLocalTable
+        ? (lang === 'es' ? 'Todos los registros' : 'All records')
+        : (lang === 'es' ? 'Todos los tickets' : 'All tickets');
+      return [{ groupKey: 'all', groupLabel: defaultGroupLabel, items: issues }];
     }
 
     const groups: Record<string, { label: string; items: JiraIssue[] }> = {};
@@ -644,7 +653,7 @@ export const DataGrid: React.FC<Props> = ({
       groupLabel: g.label,
       items: g.items,
     }));
-  }, [issues, groupBy, columns]);
+  }, [issues, groupBy, columns, isLocalTable, lang]);
 
   const toggleGroup = (groupKey: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
@@ -658,8 +667,10 @@ export const DataGrid: React.FC<Props> = ({
 
   // Complete column ID ordering in the grid
   const allColumnIds = useMemo(
-    () => ['key', 'summary', 'status', 'priority', 'assignee', ...visibleCustomColumns.map((c) => c.id)],
-    [visibleCustomColumns]
+    () => isLocalTable
+      ? ['summary', ...visibleCustomColumns.map((c) => c.id)]
+      : ['key', 'summary', 'status', 'priority', 'assignee', ...visibleCustomColumns.map((c) => c.id)],
+    [visibleCustomColumns, isLocalTable]
   );
 
   // Range and Cell Selection Helpers
@@ -1531,13 +1542,14 @@ export const DataGrid: React.FC<Props> = ({
 
   // Compute total table width to guarantee horizontal scrollbar
   const totalTableWidth = useMemo(() => {
-    const baseWidths =
-      40 + // row index #
-      (columnWidths.key || 120) +
-      (columnWidths.summary || 340) +
-      (columnWidths.status || 135) +
-      (columnWidths.priority || 120) +
-      (columnWidths.assignee || 150);
+    const baseWidths = isLocalTable
+      ? 40 + (columnWidths.summary || 340)
+      : 40 + // row index #
+        (columnWidths.key || 120) +
+        (columnWidths.summary || 340) +
+        (columnWidths.status || 135) +
+        (columnWidths.priority || 120) +
+        (columnWidths.assignee || 150);
 
     const customTotal = visibleCustomColumns.reduce(
       (sum, col) => sum + (columnWidths[col.id] || col.width || 160),
@@ -1545,7 +1557,7 @@ export const DataGrid: React.FC<Props> = ({
     );
 
     return baseWidths + customTotal + 120; // 120px buffer for add column button and comfortable margin
-  }, [columnWidths, visibleCustomColumns]);
+  }, [columnWidths, visibleCustomColumns, isLocalTable]);
 
   return (
     <div className="flex-1 overflow-x-auto overflow-y-auto bg-white relative min-h-[500px] pb-64">
@@ -1562,29 +1574,42 @@ export const DataGrid: React.FC<Props> = ({
             </th>
 
             {/* Jira Key */}
-            <th
-              style={{ width: columnWidths.key || 120 }}
-              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-10 z-30 relative group"
-            >
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-gray-400" />
-                <span>{t.col_key}</span>
-              </div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
-                onMouseDown={(e) => handleResizeStart(e, 'key', columnWidths.key || 120)}
-                title="Arrastrar para redimensionar"
-              />
-            </th>
+            {!isLocalTable && (
+              <th
+                style={{ width: columnWidths.key || 120 }}
+                className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-10 z-30 relative group"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Lock className="w-3 h-3 text-gray-400" />
+                  <span>{t.col_key}</span>
+                </div>
+                <div
+                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                  onMouseDown={(e) => handleResizeStart(e, 'key', columnWidths.key || 120)}
+                  title="Arrastrar para redimensionar"
+                />
+              </th>
+            )}
 
-            {/* Summary */}
+            {/* Summary / Name */}
             <th
               style={{ width: columnWidths.summary || 340, minWidth: 200 }}
-              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky left-40 z-30 relative group"
+              className={`px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] sticky ${isLocalTable ? 'left-10' : 'left-40'} z-30 relative group`}
             >
               <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-gray-400" />
-                <span>{t.col_summary}</span>
+                {isLocalTable ? (
+                  <Type className="w-3.5 h-3.5 text-indigo-600" />
+                ) : (
+                  <Lock className="w-3 h-3 text-gray-400" />
+                )}
+                <span className={isLocalTable ? 'text-indigo-950 font-bold' : ''}>
+                  {isLocalTable ? (lang === 'es' ? 'Nombre' : 'Name') : t.col_summary}
+                </span>
+                {isLocalTable && (
+                  <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-200/60 rounded px-1 py-0.2">
+                    {lang === 'es' ? 'Principal' : 'Primary'}
+                  </span>
+                )}
               </div>
               <div
                 className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
@@ -1593,53 +1618,55 @@ export const DataGrid: React.FC<Props> = ({
               />
             </th>
 
-            {/* Status */}
-            <th
-              style={{ width: columnWidths.status || 135 }}
-              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
-            >
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-gray-400" />
-                <span>{t.col_status}</span>
-              </div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
-                onMouseDown={(e) => handleResizeStart(e, 'status', columnWidths.status || 135)}
-                title="Arrastrar para redimensionar"
-              />
-            </th>
+            {/* If NOT isLocalTable: Status, Priority, Assignee */}
+            {!isLocalTable && (
+              <>
+                <th
+                  style={{ width: columnWidths.status || 135 }}
+                  className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3 h-3 text-gray-400" />
+                    <span>{t.col_status}</span>
+                  </div>
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                    onMouseDown={(e) => handleResizeStart(e, 'status', columnWidths.status || 135)}
+                    title="Arrastrar para redimensionar"
+                  />
+                </th>
 
-            {/* Priority */}
-            <th
-              style={{ width: columnWidths.priority || 120 }}
-              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
-            >
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-gray-400" />
-                <span>{t.col_priority}</span>
-              </div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
-                onMouseDown={(e) => handleResizeStart(e, 'priority', columnWidths.priority || 120)}
-                title="Arrastrar para redimensionar"
-              />
-            </th>
+                <th
+                  style={{ width: columnWidths.priority || 120 }}
+                  className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3 h-3 text-gray-400" />
+                    <span>{t.col_priority}</span>
+                  </div>
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                    onMouseDown={(e) => handleResizeStart(e, 'priority', columnWidths.priority || 120)}
+                    title="Arrastrar para redimensionar"
+                  />
+                </th>
 
-            {/* Assignee */}
-            <th
-              style={{ width: columnWidths.assignee || 150 }}
-              className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
-            >
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-gray-400" />
-                <span>{t.col_assignee}</span>
-              </div>
-              <div
-                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
-                onMouseDown={(e) => handleResizeStart(e, 'assignee', columnWidths.assignee || 150)}
-                title="Arrastrar para redimensionar"
-              />
-            </th>
+                <th
+                  style={{ width: columnWidths.assignee || 150 }}
+                  className="px-3 py-2.5 border-r border-gray-200 bg-[#f8f9fb] relative group"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3 h-3 text-gray-400" />
+                    <span>{t.col_assignee}</span>
+                  </div>
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-40"
+                    onMouseDown={(e) => handleResizeStart(e, 'assignee', columnWidths.assignee || 150)}
+                    title="Arrastrar para redimensionar"
+                  />
+                </th>
+              </>
+            )}
 
             {/* Custom Local & Jira Columns */}
             {visibleCustomColumns.map((col) => {
@@ -1786,7 +1813,7 @@ export const DataGrid: React.FC<Props> = ({
                 {groupBy && (
                   <tr className="bg-gray-100/90 font-medium border-y border-gray-200">
                     <td
-                      colSpan={6 + visibleCustomColumns.length + 1}
+                      colSpan={(isLocalTable ? 2 : 6) + visibleCustomColumns.length + 1}
                       className="px-4 py-2 cursor-pointer hover:bg-gray-200/70 transition-colors"
                       onClick={() => toggleGroup(group.groupKey)}
                     >
@@ -1798,7 +1825,14 @@ export const DataGrid: React.FC<Props> = ({
                         )}
                         <span className="font-bold text-gray-800 text-xs">{group.groupLabel}</span>
                         <span className="px-2 py-0.5 text-[10px] font-semibold bg-white rounded-full border border-gray-300 text-gray-600 shadow-2xs">
-                          {group.items.length} {group.items.length === 1 ? 'ticket' : 'tickets'}
+                          {group.items.length}{' '}
+                          {group.items.length === 1
+                            ? isLocalTable
+                              ? lang === 'es' ? 'registro' : 'record'
+                              : 'ticket'
+                            : isLocalTable
+                            ? lang === 'es' ? 'registros' : 'records'
+                            : 'tickets'}
                         </span>
                       </div>
                     </td>
@@ -1855,59 +1889,61 @@ export const DataGrid: React.FC<Props> = ({
                       })()}
 
                       {/* Key */}
-                      <td
-                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'key', e)}
-                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'key')}
-                        onClick={(e) => handleCellClick(issue.key, 'key', e)}
-                        className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
-                          issue.key,
-                          'key'
-                        )}`}
-                        title={
-                          lang === 'es'
-                            ? `${issue.key} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.key} (Click or drag to select, Ctrl+C to copy)`
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <a
-                            href={
-                              jiraDomain
-                                ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/browse/${issue.key}`
-                                : '#'
-                            }
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => {
-                              if (!jiraDomain) {
-                                e.preventDefault();
-                                alert(
-                                  lang === 'es'
-                                    ? 'Configura tu dominio Jira en Ajustes (⚙️) para abrir tickets.'
-                                    : 'Configure your Jira domain in Settings (⚙️) to open tickets.'
-                                );
+                      {!isLocalTable && (
+                        <td
+                          onMouseDown={(e) => handleCellMouseDown(issue.key, 'key', e)}
+                          onMouseEnter={() => handleCellMouseEnter(issue.key, 'key')}
+                          onClick={(e) => handleCellClick(issue.key, 'key', e)}
+                          className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-10 z-10 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                            issue.key,
+                            'key'
+                          )}`}
+                          title={
+                            lang === 'es'
+                              ? `${issue.key} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                              : `${issue.key} (Click or drag to select, Ctrl+C to copy)`
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <a
+                              href={
+                                jiraDomain
+                                  ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/browse/${issue.key}`
+                                  : '#'
                               }
-                            }}
-                            className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 group/key"
-                            title={jiraDomain ? `${t.open_in_jira} (${issue.key})` : issue.key}
-                          >
-                            <span>{issue.key}</span>
-                            <ExternalLink className="w-3 h-3 opacity-0 group-hover/key:opacity-100 transition-opacity text-blue-500" />
-                          </a>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyCell(issue.key, 'key');
-                            }}
-                            title={lang === 'es' ? 'Copiar clave (Ctrl+C)' : 'Copy key (Ctrl+C)'}
-                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {renderCornerHandle(issue.key, 'key')}
-                      </td>
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => {
+                                if (!jiraDomain) {
+                                  e.preventDefault();
+                                  alert(
+                                    lang === 'es'
+                                      ? 'Configura tu dominio Jira en Ajustes (⚙️) para abrir tickets.'
+                                      : 'Configure your Jira domain in Settings (⚙️) to open tickets.'
+                                  );
+                                }
+                              }}
+                              className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 group/key"
+                              title={jiraDomain ? `${t.open_in_jira} (${issue.key})` : issue.key}
+                            >
+                              <span>{issue.key}</span>
+                              <ExternalLink className="w-3 h-3 opacity-0 group-hover/key:opacity-100 transition-opacity text-blue-500" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyCell(issue.key, 'key');
+                              }}
+                              title={lang === 'es' ? 'Copiar clave (Ctrl+C)' : 'Copy key (Ctrl+C)'}
+                              className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                          {renderCornerHandle(issue.key, 'key')}
+                        </td>
+                      )}
 
                       {/* Summary */}
                       {(() => {
@@ -1929,13 +1965,13 @@ export const DataGrid: React.FC<Props> = ({
                                 });
                               }
                             }}
-                            className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky left-40 z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${getCellClasses(
+                            className={`px-3 py-2 border-r border-gray-100 bg-white group-hover:bg-blue-50/20 sticky ${isLocalTable ? 'left-10' : 'left-40'} z-10 max-w-[360px] truncate font-medium text-gray-900 cursor-pointer transition-all ${getCellClasses(
                               issue.key,
                               'summary'
                             )}`}
                             title={
                               isLocalIssue
-                                ? `${issue.summary} (${lang === 'es' ? 'Doble clic para editar' : 'Double click to edit'})`
+                                ? `${issue.summary || ''} (${lang === 'es' ? 'Doble clic para editar' : 'Double click to edit'})`
                                 : `${issue.summary} (${lang === 'es' ? 'Clic o arrastrar para seleccionar, Ctrl+C para copiar' : 'Click or drag to select, Ctrl+C to copy'})`
                             }
                           >
@@ -1951,8 +1987,8 @@ export const DataGrid: React.FC<Props> = ({
                               />
                             ) : (
                               <div className="flex items-center justify-between gap-1">
-                                <span className="truncate" title={issue.summary}>
-                                  {issue.summary}
+                                <span className={`truncate ${!issue.summary ? 'italic text-gray-400 font-normal' : ''}`} title={issue.summary || ''}>
+                                  {issue.summary || (isLocalTable ? (lang === 'es' ? '(Sin nombre)' : '(Untitled)') : '')}
                                 </span>
                                 <div className="flex items-center gap-0.5 shrink-0">
                                   {isLocalIssue && onUpdateLocalIssue && (
@@ -1967,7 +2003,7 @@ export const DataGrid: React.FC<Props> = ({
                                         });
                                       }}
                                       className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-100/80 transition-all cursor-pointer"
-                                      title={lang === 'es' ? 'Editar resumen' : 'Edit summary'}
+                                      title={lang === 'es' ? 'Editar nombre' : 'Edit name'}
                                     >
                                       <Edit2 className="w-3 h-3" />
                                     </button>
@@ -1991,128 +2027,133 @@ export const DataGrid: React.FC<Props> = ({
                         );
                       })()}
 
-                      {/* Jira Status */}
-                      <td
-                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'status', e)}
-                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'status')}
-                        onClick={(e) => handleCellClick(issue.key, 'status', e)}
-                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
-                          issue.key,
-                          'status'
-                        )}`}
-                        title={
-                          lang === 'es'
-                            ? `${issue.jira_status} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.jira_status} (Click or drag to select, Ctrl+C to copy)`
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span
-                            className={`px-2 py-0.5 text-[11px] font-medium rounded-full border ${getStatusBadge(
-                              issue.jira_status_category
+                      {/* Jira Status, Priority, Assignee (Only for Jira Tables) */}
+                      {!isLocalTable && (
+                        <>
+                          {/* Jira Status */}
+                          <td
+                            onMouseDown={(e) => handleCellMouseDown(issue.key, 'status', e)}
+                            onMouseEnter={() => handleCellMouseEnter(issue.key, 'status')}
+                            onClick={(e) => handleCellClick(issue.key, 'status', e)}
+                            className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                              issue.key,
+                              'status'
                             )}`}
+                            title={
+                              lang === 'es'
+                                ? `${issue.jira_status} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                                : `${issue.jira_status} (Click or drag to select, Ctrl+C to copy)`
+                            }
                           >
-                            {issue.jira_status}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyCell(issue.key, 'status');
-                            }}
-                            title={lang === 'es' ? 'Copiar estado (Ctrl+C)' : 'Copy status (Ctrl+C)'}
-                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {renderCornerHandle(issue.key, 'status')}
-                      </td>
+                            <div className="flex items-center justify-between gap-1">
+                              <span
+                                className={`px-2 py-0.5 text-[11px] font-medium rounded-full border ${getStatusBadge(
+                                  issue.jira_status_category
+                                )}`}
+                              >
+                                {issue.jira_status}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyCell(issue.key, 'status');
+                                }}
+                                title={lang === 'es' ? 'Copiar estado (Ctrl+C)' : 'Copy status (Ctrl+C)'}
+                                className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                            {renderCornerHandle(issue.key, 'status')}
+                          </td>
 
-                      {/* Priority */}
-                      <td
-                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'priority', e)}
-                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'priority')}
-                        onClick={(e) => handleCellClick(issue.key, 'priority', e)}
-                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
-                          issue.key,
-                          'priority'
-                        )}`}
-                        title={
-                          lang === 'es'
-                            ? `${issue.priority} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.priority} (Click or drag to select, Ctrl+C to copy)`
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span
-                            className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${getPriorityBadge(
-                              issue.priority
+                          {/* Priority */}
+                          <td
+                            onMouseDown={(e) => handleCellMouseDown(issue.key, 'priority', e)}
+                            onMouseEnter={() => handleCellMouseEnter(issue.key, 'priority')}
+                            onClick={(e) => handleCellClick(issue.key, 'priority', e)}
+                            className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                              issue.key,
+                              'priority'
                             )}`}
+                            title={
+                              lang === 'es'
+                                ? `${issue.priority} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                                : `${issue.priority} (Click or drag to select, Ctrl+C to copy)`
+                            }
                           >
-                            {issue.priority}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyCell(issue.key, 'priority');
-                            }}
-                            title={lang === 'es' ? 'Copiar prioridad (Ctrl+C)' : 'Copy priority (Ctrl+C)'}
-                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {renderCornerHandle(issue.key, 'priority')}
-                      </td>
+                            <div className="flex items-center justify-between gap-1">
+                              <span
+                                className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border ${getPriorityBadge(
+                                  issue.priority
+                                )}`}
+                              >
+                                {issue.priority}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyCell(issue.key, 'priority');
+                                }}
+                                title={lang === 'es' ? 'Copiar prioridad (Ctrl+C)' : 'Copy priority (Ctrl+C)'}
+                                className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                            {renderCornerHandle(issue.key, 'priority')}
+                          </td>
 
-                      {/* Assignee */}
-                      <td
-                        onMouseDown={(e) => handleCellMouseDown(issue.key, 'assignee', e)}
-                        onMouseEnter={() => handleCellMouseEnter(issue.key, 'assignee')}
-                        onClick={(e) => handleCellClick(issue.key, 'assignee', e)}
-                        className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
-                          issue.key,
-                          'assignee'
-                        )}`}
-                        title={
-                          lang === 'es'
-                            ? `${issue.assignee_name || t.unassigned} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
-                            : `${issue.assignee_name || t.unassigned} (Click or drag to select, Ctrl+C to copy)`
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5 truncate">
-                            {issue.assignee_avatar ? (
-                              <img
-                                src={issue.assignee_avatar}
-                                alt={issue.assignee_name || ''}
-                                className="w-5 h-5 rounded-full object-cover border border-gray-200"
-                              />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-[10px] font-bold">
-                                {issue.assignee_name ? issue.assignee_name[0] : '?'}
+                          {/* Assignee */}
+                          <td
+                            onMouseDown={(e) => handleCellMouseDown(issue.key, 'assignee', e)}
+                            onMouseEnter={() => handleCellMouseEnter(issue.key, 'assignee')}
+                            onClick={(e) => handleCellClick(issue.key, 'assignee', e)}
+                            className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap cursor-pointer transition-all ${getCellClasses(
+                              issue.key,
+                              'assignee'
+                            )}`}
+                            title={
+                              lang === 'es'
+                                ? `${issue.assignee_name || t.unassigned} (Clic o arrastrar para seleccionar, Ctrl+C para copiar)`
+                                : `${issue.assignee_name || t.unassigned} (Click or drag to select, Ctrl+C to copy)`
+                            }
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 truncate">
+                                {issue.assignee_avatar ? (
+                                  <img
+                                    src={issue.assignee_avatar}
+                                    alt={issue.assignee_name || ''}
+                                    className="w-5 h-5 rounded-full object-cover border border-gray-200"
+                                  />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-[10px] font-bold">
+                                    {issue.assignee_name ? issue.assignee_name[0] : '?'}
+                                  </div>
+                                )}
+                                <span className="text-gray-700 truncate max-w-[100px]">
+                                  {issue.assignee_name || t.unassigned}
+                                </span>
                               </div>
-                            )}
-                            <span className="text-gray-700 truncate max-w-[100px]">
-                              {issue.assignee_name || t.unassigned}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyCell(issue.key, 'assignee');
-                            }}
-                            title={lang === 'es' ? 'Copiar asignado (Ctrl+C)' : 'Copy assignee (Ctrl+C)'}
-                            className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                        {renderCornerHandle(issue.key, 'assignee')}
-                      </td>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyCell(issue.key, 'assignee');
+                                }}
+                                title={lang === 'es' ? 'Copiar asignado (Ctrl+C)' : 'Copy assignee (Ctrl+C)'}
+                                className="opacity-0 group-hover:opacity-100 hover:text-blue-600 text-gray-400 p-0.5 rounded transition-opacity cursor-pointer shrink-0"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                            {renderCornerHandle(issue.key, 'assignee')}
+                          </td>
+                        </>
+                      )}
 
                       {/* Custom Columns Cells */}
                       {visibleCustomColumns.map((col) => {
@@ -2658,6 +2699,31 @@ export const DataGrid: React.FC<Props> = ({
               </React.Fragment>
             );
           })}
+
+          {issues.length === 0 && (
+            <tr>
+              <td
+                colSpan={(isLocalTable ? 2 : 6) + visibleCustomColumns.length + 1}
+                className="py-16 text-center text-gray-500"
+              >
+                <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-700">
+                    {isLocalTable
+                      ? (lang === 'es' ? 'No hay registros en esta tabla local' : 'No records in this local table')
+                      : (lang === 'es' ? 'No se encontraron tickets con los filtros actuales' : 'No tickets matching current filters')}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {isLocalTable
+                      ? (lang === 'es' ? 'Haz clic en "Nueva Fila" en la barra superior para agregar un registro.' : 'Click "New Row" in the top bar to add a record.')
+                      : (lang === 'es' ? 'Prueba cambiando o limpiando tus condiciones de filtro.' : 'Try changing or clearing your filter conditions.')}
+                  </p>
+                </div>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
 

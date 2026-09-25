@@ -70,6 +70,7 @@ def create_column(data: CustomColumnCreate, db: Session = Depends(get_db)):
     count = db.query(CustomColumn).count()
     new_col = CustomColumn(
         id=col_id,
+        table_id=data.table_id,
         name=data.name,
         type=data.type,
         options=data.options or [],
@@ -93,6 +94,8 @@ def update_column(column_id: str, data: CustomColumnUpdate, db: Session = Depend
         col.name = data.name
     if data.type is not None:
         col.type = data.type
+    if data.table_id is not None:
+        col.table_id = data.table_id
     if data.options is not None:
         col.options = data.options
     if data.position is not None:

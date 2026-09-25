@@ -192,7 +192,7 @@ export const Toolbar: React.FC<Props> = ({
           <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder={t.search_placeholder}
+            placeholder={isLocalTable ? (lang === 'es' ? 'Buscar registros...' : 'Search records...') : t.search_placeholder}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="text-xs pl-8 pr-3 py-1.5 bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-36 sm:w-48 transition-all"
@@ -239,6 +239,7 @@ export const Toolbar: React.FC<Props> = ({
             issues={issues}
             matchingCount={matchingCount}
             totalCount={totalCount}
+            isLocalTable={isLocalTable}
             lang={lang}
           />
         </div>
@@ -282,36 +283,70 @@ export const Toolbar: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => {
-                  onSortChange('priority', sortDirection === 'asc' ? 'desc' : 'asc');
+                  onSortChange('summary', sortDirection === 'asc' ? 'desc' : 'asc');
                   setActiveMenu(null);
                 }}
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
               >
-                <span>{t.group_priority}</span>
-                {sortField === 'priority' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                <span>{isLocalTable ? (lang === 'es' ? 'Nombre' : 'Name') : t.col_summary}</span>
+                {sortField === 'summary' && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onSortChange('jira_status', sortDirection === 'asc' ? 'desc' : 'asc');
-                  setActiveMenu(null);
-                }}
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
-              >
-                <span>{t.group_status}</span>
-                {sortField === 'jira_status' && <Check className="w-3.5 h-3.5 text-blue-600" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onSortChange('key', sortDirection === 'asc' ? 'desc' : 'asc');
-                  setActiveMenu(null);
-                }}
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
-              >
-                <span>{t.col_key}</span>
-                {sortField === 'key' && <Check className="w-3.5 h-3.5 text-blue-600" />}
-              </button>
+
+              {!isLocalTable && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSortChange('priority', sortDirection === 'asc' ? 'desc' : 'asc');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{t.group_priority}</span>
+                    {sortField === 'priority' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSortChange('jira_status', sortDirection === 'asc' ? 'desc' : 'asc');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{t.group_status}</span>
+                    {sortField === 'jira_status' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSortChange('key', sortDirection === 'asc' ? 'desc' : 'asc');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{t.col_key}</span>
+                    {sortField === 'key' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                  </button>
+                </>
+              )}
+
+              {/* Custom columns sortable */}
+              {columns
+                .filter((c) => c.type !== 'formula' && c.type !== 'archivy_link' && c.type !== 'jira_field')
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      onSortChange(c.id, sortDirection === 'asc' ? 'desc' : 'asc');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{c.name}</span>
+                    {sortField === c.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                  </button>
+                ))}
             </div>
           )}
         </div>
@@ -348,39 +383,44 @@ export const Toolbar: React.FC<Props> = ({
                 <span>{t.no_group}</span>
                 {!groupBy && <Check className="w-3.5 h-3.5" />}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onGroupByChange('jira_status');
-                  setActiveMenu(null);
-                }}
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
-              >
-                <span>{t.group_status}</span>
-                {groupBy === 'jira_status' && <Check className="w-3.5 h-3.5 text-purple-600" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onGroupByChange('priority');
-                  setActiveMenu(null);
-                }}
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
-              >
-                <span>{t.group_priority}</span>
-                {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-purple-600" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onGroupByChange('assignee_name');
-                  setActiveMenu(null);
-                }}
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
-              >
-                <span>{t.group_assignee}</span>
-                {groupBy === 'assignee_name' && <Check className="w-3.5 h-3.5 text-purple-600" />}
-              </button>
+
+              {!isLocalTable && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onGroupByChange('jira_status');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{t.group_status}</span>
+                    {groupBy === 'jira_status' && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onGroupByChange('priority');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{t.group_priority}</span>
+                    {groupBy === 'priority' && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onGroupByChange('assignee_name');
+                      setActiveMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
+                  >
+                    <span>{t.group_assignee}</span>
+                    {groupBy === 'assignee_name' && <Check className="w-3.5 h-3.5 text-purple-600" />}
+                  </button>
+                </>
+              )}
 
               {/* Custom Single-Select Columns */}
               {columns
@@ -395,7 +435,7 @@ export const Toolbar: React.FC<Props> = ({
                     }}
                     className="w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-gray-50 text-gray-700"
                   >
-                    <span>{c.name} (Local)</span>
+                    <span>{c.name}</span>
                     {groupBy === c.id && <Check className="w-3.5 h-3.5 text-purple-600" />}
                   </button>
                 ))}

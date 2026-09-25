@@ -14,6 +14,7 @@ interface Props {
   existingColumns?: CustomColumn[];
   tables?: JiraFilter[];
   activeTableId?: string;
+  isLocalTable?: boolean;
   lang?: Language;
 }
 
@@ -24,8 +25,10 @@ export const AddColumnModal: React.FC<Props> = ({
   existingColumns = [],
   tables = [],
   activeTableId,
+  isLocalTable,
   lang = 'es',
 }) => {
+  const isLocal = isLocalTable ?? Boolean(activeTableId?.startsWith('tbl-') || tables?.find((t) => t.id === activeTableId)?.type === 'local');
   const [columnCategory, setColumnCategory] = useState<'local' | 'jira'>('local');
   const [name, setName] = useState('');
   const [type, setType] = useState<ColumnType>('single_select');
@@ -50,9 +53,13 @@ export const AddColumnModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetchJiraFields()
-        .then((f) => setJiraFields(f))
-        .catch((e) => console.error('Error fetching Jira fields:', e));
+      if (!isLocal) {
+        fetchJiraFields()
+          .then((f) => setJiraFields(f))
+          .catch((e) => console.error('Error fetching Jira fields:', e));
+      } else {
+        setColumnCategory('local');
+      }
 
       // Default target table to first available table different from current or first
       const defaultTarget = tables.find((t) => t.id !== activeTableId) || tables[0];
@@ -61,7 +68,7 @@ export const AddColumnModal: React.FC<Props> = ({
       const linkCol = existingColumns.find((c) => c.type === 'link_row');
       if (linkCol) setLinkColumnId(linkCol.id);
     }
-  }, [isOpen, tables, activeTableId, existingColumns]);
+  }, [isOpen, tables, activeTableId, existingColumns, isLocal]);
 
   if (!isOpen) return null;
 
@@ -170,33 +177,35 @@ export const AddColumnModal: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Tab Selector: Campo Local vs Campo Nativo de Jira */}
-        <div className="flex border-b border-gray-200 bg-gray-50/70 p-1.5 gap-1.5 text-xs font-medium">
-          <button
-            type="button"
-            onClick={() => setColumnCategory('local')}
-            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-              columnCategory === 'local'
-                ? 'bg-white text-blue-700 shadow-xs font-semibold'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Campo Local (Personalizado)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setColumnCategory('jira')}
-            className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-              columnCategory === 'jira'
-                ? 'bg-white text-blue-700 shadow-xs font-semibold'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-blue-600" />
-            <span>Campo de Jira (Field Selector)</span>
-          </button>
-        </div>
+        {/* Tab Selector: Campo Local vs Campo Nativo de Jira (Only for Jira tables) */}
+        {!isLocal && (
+          <div className="flex border-b border-gray-200 bg-gray-50/70 p-1.5 gap-1.5 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setColumnCategory('local')}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                columnCategory === 'local'
+                  ? 'bg-white text-blue-700 shadow-xs font-semibold'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Campo Local (Personalizado)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setColumnCategory('jira')}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                columnCategory === 'jira'
+                  ? 'bg-white text-blue-700 shadow-xs font-semibold'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 text-blue-600" />
+              <span>Campo de Jira (Field Selector)</span>
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {columnCategory === 'jira' ? (

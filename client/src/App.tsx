@@ -75,6 +75,25 @@ export function App() {
     return allIssues.filter((i) => !i.table_id || i.table_id === selectedFilterId);
   }, [allIssues, selectedFilterId]);
 
+  // Scoped columns for active table (Local tables never have Jira fields and start with just 'Name')
+  const tableColumns = useMemo(() => {
+    if (isLocalTable) {
+      // In a Local Table:
+      // Exclude all Jira fields (type === 'jira_field' or jira_field_key)
+      // Only include custom columns specifically created for this table (c.table_id === selectedFilterId)
+      return columns.filter(
+        (c) => c.type !== 'jira_field' && !c.jira_field_key && c.table_id === selectedFilterId
+      );
+    } else {
+      // In a Jira Table:
+      // Show columns for this Jira filter or global columns (no table_id or table_id === selectedFilterId)
+      // Exclude columns that explicitly belong to a local table (starts with 'tbl-')
+      return columns.filter(
+        (c) => !c.table_id || c.table_id === selectedFilterId || (!c.table_id.startsWith('tbl-') && !c.table_id.startsWith('local-'))
+      );
+    }
+  }, [columns, isLocalTable, selectedFilterId]);
+
   // Active view layout configuration
   const [searchQuery, setSearchQuery] = useState('');
   const [groupBy, setGroupBy] = useState<string | null>(null);
@@ -471,7 +490,10 @@ export function App() {
 
   const handleAddColumn = async (columnData: Partial<CustomColumn>) => {
     try {
-      const newCol = await createColumn(columnData);
+      const newCol = await createColumn({
+        ...columnData,
+        table_id: selectedFilterId || undefined,
+      } as any);
       setColumns((prev) => {
         const next = [...prev, newCol];
         const visibleIds = next.filter((c) => c.is_visible).map((c) => c.id);
@@ -788,7 +810,7 @@ export function App() {
             onAddRow={handleCreateRow}
             isViewsSidebarOpen={isViewsSidebarOpen}
             onToggleViewsSidebar={() => setIsViewsSidebarOpen((prev) => !prev)}
-            columns={columns}
+            columns={tableColumns}
             onToggleColumnVisibility={handleToggleColumnVisibility}
             onOpenManageFields={() => setIsManageFieldsOpen(true)}
             onOpenAddColumn={() => setIsAddColumnOpen(true)}
@@ -820,9 +842,10 @@ export function App() {
           ) : (
             <DataGrid
               issues={filteredAndSortedIssues}
-              columns={columns}
+              columns={tableColumns}
               allIssues={allIssues}
               tables={filters}
+              isLocalTable={isLocalTable}
               onUpdateCustomValue={handleUpdateCustomValue}
               onUpdateCustomValuesBulk={handleUpdateCustomValuesBulk}
               onUpdateLocalIssue={handleUpdateLocalIssue}
@@ -854,7 +877,7 @@ export function App() {
       <ManageFieldsModal
         isOpen={isManageFieldsOpen}
         onClose={() => setIsManageFieldsOpen(false)}
-        columns={columns}
+        columns={tableColumns}
         onToggleVisibility={handleToggleColumnVisibility}
         onShowAll={handleShowAllColumns}
         onHideAll={handleHideAllColumns}
@@ -878,9 +901,10 @@ export function App() {
         isOpen={isAddColumnOpen}
         onClose={() => setIsAddColumnOpen(false)}
         onAddColumn={handleAddColumn}
-        existingColumns={columns}
+        existingColumns={tableColumns}
         tables={filters}
         activeTableId={selectedFilterId}
+        isLocalTable={isLocalTable}
         lang={lang}
       />
 
@@ -897,7 +921,7 @@ export function App() {
         }}
         column={editingColumn}
         onUpdateColumn={handleUpdateColumn}
-        existingColumns={columns}
+        existingColumns={tableColumns}
         lang={lang}
       />
 

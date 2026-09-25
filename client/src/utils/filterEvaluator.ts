@@ -146,7 +146,11 @@ export function parseDateValue(val: any): Date | null {
   return null;
 }
 
-export function getAllFilterableFields(columns: CustomColumn[], issues: JiraIssue[] = []): FieldDefinition[] {
+export function getAllFilterableFields(
+  columns: CustomColumn[],
+  issues: JiraIssue[] = [],
+  isLocalTable: boolean = false
+): FieldDefinition[] {
   const custom: FieldDefinition[] = columns.map((col) => {
     const type = getFieldCategory(col.id, columns, issues);
     return {
@@ -156,6 +160,16 @@ export function getAllFilterableFields(columns: CustomColumn[], issues: JiraIssu
       isCustom: true,
     };
   });
+
+  if (isLocalTable) {
+    const localPrimary: FieldDefinition = {
+      id: 'summary',
+      name: 'Nombre / Name',
+      type: 'text',
+    };
+    return [localPrimary, ...custom];
+  }
+
   return [...BUILTIN_FIELDS, ...custom];
 }
 
